@@ -1,14 +1,31 @@
+---
 kind: pipeline
 name: default
-
+platform:
+  os: linux
+  arсh: amd64
 workspace:
   base: /go
   path: src/github.com/dimitarvdimitrov/spork
 
 steps:
-  - name: install
-    image: golang:1.13
   - name: test
     image: golang:1.13
     commands:
       - make
+---
+kind: pipeline
+name: deploy
+platform:
+  os: linux
+  arсh: amd64
+steps:
+  - name: deploy
+    image: quay.io/honestbee/drone-kubernetes
+    commands:
+      - echo "$KUBECONFIG_CONTENTS" | base64 --decode > kubeconfig.yaml
+      - kubectl get pods --all-namespaces --kubeconfig kubeconfig.yaml
+    environment:
+      KUBECONFIG_CONTENTS:
+        from_secret: kubeconfig
+depends_on: [default]
