@@ -1,0 +1,14 @@
+kind: pipeline
+name: default
+
+workspace:
+  base: /go
+  path: src/github.com/dimitarvdimitrov/spork
+
+steps:
+  - name: install
+    image: golang:1.13
+  - name: test
+    image: golang:1.13
+    commands:
+      - make
