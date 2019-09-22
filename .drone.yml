@@ -1,38 +1,62 @@
 ---
 kind: pipeline
 name: default
+
 platform:
   os: linux
-  arсh: amd64
+
 workspace:
   base: /go
   path: src/github.com/dimitarvdimitrov/spork
 
 steps:
-  - name: test
-    image: golang:1.13
-    commands:
-      - make
+- name: test
+  image: golang:1.13
+  commands:
+  - make
+
 ---
 kind: pipeline
 name: deploy
+
 platform:
   os: linux
-  arсh: amd64
+
+workspace:
+  base: /go
+  path: src/github.com/dimitarvdimitrov/spork
+
 steps:
-  - name: deploy
-    image: jmccann/drone-terraform:6.1-0.12.8
-    commands:
-      - cd infrastructure
-      - terraform init
-      - TF_VAR_squid_version=$DRONE_COMMIT terraform apply -auto-approve
-    environment:
-      DIGITALOCEAN_TOKEN:
-        from_secret: digitalocean_token
-      AWS_SECRET_ACCESS_KEY:
-        from_secret: AWS_SECRET_ACCESS_KEY
-      AWS_ACCESS_KEY_ID:
-        from_secret: AWS_ACCESS_KEY_ID
-depends_on: [default]
+- name: build docker
+  image: plugins/docker
+  settings:
+    auto_tag: true
+    password:
+      from_secret: DOCKER_PASSWORD
+    registry: https://index.docker.io/v1/
+    repo: donkorleone/alpine
+    username:
+      from_secret: DOCKER_USERNAME
+
+- name: deploy
+  image: jmccann/drone-terraform:6.1-0.12.8
+  commands:
+  - cd infrastructure
+  - terraform init
+  - TF_VAR_squid_version=$DRONE_COMMIT terraform apply -auto-approve
+  environment:
+    AWS_ACCESS_KEY_ID:
+      from_secret: AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY:
+      from_secret: AWS_SECRET_ACCESS_KEY
+    DIGITALOCEAN_TOKEN:
+      from_secret: digitalocean_token
+
 trigger:
-  branch: [master]
+  branch:
+  - master
+
+depends_on:
+- default
+
+...
