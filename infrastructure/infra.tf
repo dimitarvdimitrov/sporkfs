@@ -1,7 +1,9 @@
-provider "digitalocean" {}
+provider "digitalocean" {
+  version = "~> 1.7"
+}
 
 data "digitalocean_volume" "ceph-volumes" {
-  count = var.ceph-nodes
+  count = var.ceph_nodes
   name = "ceph-vol-${count.index+1}"
 }
 
@@ -29,7 +31,7 @@ resource "digitalocean_droplet" "db-node" {
 }
 
 resource "digitalocean_droplet" "ceph-nodes" {
-  count = var.ceph-nodes
+  count = var.ceph_nodes
   image = "ubuntu-18-04-x64"
   name = "ceph-${count.index+1}"
   region = "lon1"
@@ -46,7 +48,7 @@ resource "digitalocean_kubernetes_cluster" "spork-cluster" {
   region = "lon1"
   node_pool {
     name = "k8s-worker"
-    node_count = var.k8s-nodes
+    node_count = var.k8s_nodes
     size = "s-1vcpu-2gb"
   }
 }

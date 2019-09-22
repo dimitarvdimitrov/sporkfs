@@ -25,7 +25,7 @@ steps:
     commands:
       - cd infrastructure
       - terraform init
-      - TF_VAR_squid_version=$(DRONE_COMMIT) terraform apply -input=false
+      - TF_VAR_squid_version=$DRONE_COMMIT terraform apply -auto-approve
     environment:
       DIGITALOCEAN_TOKEN:
         from_secret: digitalocean_token
