@@ -21,11 +21,14 @@ platform:
   arсh: amd64
 steps:
   - name: deploy
-    image: quay.io/honestbee/drone-kubernetes
+    image: jmccann/drone-terraform:6.1-0.12.8
     commands:
-      - echo "$KUBECONFIG_CONTENTS" | base64 --decode > kubeconfig.yaml
-      - kubectl get pods --all-namespaces --kubeconfig kubeconfig.yaml
+      - cd infrastructure
+      - terraform init
+      - TF_VAR_squid_version=$(DRONE_COMMIT) terraform apply -input=false
     environment:
-      KUBECONFIG_CONTENTS:
-        from_secret: kubeconfig
+      DIGITALOCEAN_TOKEN:
+        from_secret: digitalocean_token
 depends_on: [default]
+trigger:
+  branch: [master]
