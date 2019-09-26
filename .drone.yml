@@ -27,30 +27,37 @@ workspace:
   path: src/github.com/dimitarvdimitrov/spork
 
 steps:
-- name: build docker
+- name: build docker squid
   image: plugins/docker
-  settings:
+  settings: &docker_settings
     auto_tag: true
     password:
       from_secret: DOCKER_PASSWORD
-    registry: https://index.docker.io/v1/
-    repo: donkorleone/alpine
     username:
       from_secret: DOCKER_USERNAME
+    registry: https://index.docker.io/v1/
+    repo: donkorleone/squid
 
-- name: deploy
-  image: jmccann/drone-terraform:6.1-0.12.8
-  commands:
-  - cd infrastructure
-  - terraform init
-  - TF_VAR_squid_version=$DRONE_COMMIT terraform apply -auto-approve
-  environment:
-    AWS_ACCESS_KEY_ID:
-      from_secret: AWS_ACCESS_KEY_ID
-    AWS_SECRET_ACCESS_KEY:
-      from_secret: AWS_SECRET_ACCESS_KEY
-    DIGITALOCEAN_TOKEN:
-      from_secret: digitalocean_token
+#- name: build docker core
+#  image: plugins/docker
+#  settings:
+#    <<: *docker_settings
+#    repo: donkorleone/core
+#    dockerfile: dockerfiles/core
+#
+#- name: deploy
+#  image: jmccann/drone-terraform:6.1-0.12.8
+#  commands:
+#  - cd infrastructure
+#  - terraform init
+#  - TF_VAR_squid_version=$DRONE_COMMIT terraform apply -auto-approve
+#  environment:
+#    AWS_ACCESS_KEY_ID:
+#      from_secret: AWS_ACCESS_KEY_ID
+#    AWS_SECRET_ACCESS_KEY:
+#      from_secret: AWS_SECRET_ACCESS_KEY
+#    DIGITALOCEAN_TOKEN:
+#      from_secret: digitalocean_token
 
 trigger:
   branch:
