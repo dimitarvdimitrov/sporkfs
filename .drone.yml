@@ -30,7 +30,7 @@ steps:
 - name: build docker squid
   image: plugins/docker
   settings: &docker_settings
-    auto_tag: true
+    tags: ["${CI_BUILD_NUMBER}"]
     password:
       from_secret: DOCKER_PASSWORD
     username:
