@@ -29,35 +29,30 @@ workspace:
 steps:
 - name: build docker squid
   image: plugins/docker
-  settings: &docker_settings
-    tags: ["${CI_BUILD_NUMBER}"]
+  settings:
     password:
       from_secret: DOCKER_PASSWORD
-    username:
-      from_secret: DOCKER_USERNAME
     registry: https://index.docker.io/v1/
     repo: donkorleone/squid
+    tags:
+    - "v${CI_BUILD_NUMBER}"
+    username:
+      from_secret: DOCKER_USERNAME
 
-#- name: build docker core
-#  image: plugins/docker
-#  settings:
-#    <<: *docker_settings
-#    repo: donkorleone/core
-#    dockerfile: dockerfiles/core
-#
-#- name: deploy
-#  image: jmccann/drone-terraform:6.1-0.12.8
-#  commands:
-#  - cd infrastructure
-#  - terraform init
-#  - TF_VAR_squid_version=$DRONE_COMMIT terraform apply -auto-approve
-#  environment:
-#    AWS_ACCESS_KEY_ID:
-#      from_secret: AWS_ACCESS_KEY_ID
-#    AWS_SECRET_ACCESS_KEY:
-#      from_secret: AWS_SECRET_ACCESS_KEY
-#    DIGITALOCEAN_TOKEN:
-#      from_secret: digitalocean_token
+- name: deploy
+  image: jmccann/drone-terraform:6.1-0.12.8
+  commands:
+  - cd infrastructure
+  - terraform init
+  - terraform apply -auto-approve
+  environment:
+    AWS_ACCESS_KEY_ID:
+      from_secret: AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY:
+      from_secret: AWS_SECRET_ACCESS_KEY
+    DIGITALOCEAN_TOKEN:
+      from_secret: digitalocean_token
+    TF_VAR_squid_version: "v${CI_BUILD_NUMBER}"
 
 trigger:
   branch:
