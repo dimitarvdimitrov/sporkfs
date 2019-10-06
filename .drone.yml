@@ -7,58 +7,11 @@ platform:
 
 workspace:
   base: /go
-  path: src/github.com/dimitarvdimitrov/spork
+  path: src/github.com/dimitarvdimitrov/sporkfs
 
 steps:
 - name: test
   image: golang:1.13
   commands:
   - make
-
----
-kind: pipeline
-name: deploy
-
-platform:
-  os: linux
-
-workspace:
-  base: /go
-  path: src/github.com/dimitarvdimitrov/spork
-
-steps:
-- name: build docker squid
-  image: plugins/docker
-  settings:
-    password:
-      from_secret: DOCKER_PASSWORD
-    registry: https://index.docker.io/v1/
-    repo: donkorleone/squid
-    tags:
-    - "v${CI_BUILD_NUMBER}"
-    username:
-      from_secret: DOCKER_USERNAME
-
-- name: deploy
-  image: jmccann/drone-terraform:6.1-0.12.8
-  commands:
-  - cd infrastructure
-  - terraform init
-  - terraform apply -auto-approve
-  environment:
-    AWS_ACCESS_KEY_ID:
-      from_secret: AWS_ACCESS_KEY_ID
-    AWS_SECRET_ACCESS_KEY:
-      from_secret: AWS_SECRET_ACCESS_KEY
-    DIGITALOCEAN_TOKEN:
-      from_secret: digitalocean_token
-    TF_VAR_squid_version: "v${CI_BUILD_NUMBER}"
-
-trigger:
-  branch:
-  - master
-
-depends_on:
-- default
-
 ...

@@ -1,2 +1,2 @@
-# spork
-Distributed object storage written mainly in Go
+# sporkfs
+Distributed file system in Go

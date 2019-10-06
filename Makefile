@@ -1,6 +1,3 @@
-APP_NAME:=spork
-REPO_NAME:=dimitarvdimitrov/spork
-
 all: test
 
 test:
