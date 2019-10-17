@@ -2,8 +2,6 @@ package fuse
 
 import (
 	"context"
-	"encoding/binary"
-	"os"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -13,41 +11,34 @@ import (
 )
 
 type node struct {
-	id    fuse.NodeID
-	isDir bool
-	mode  os.FileMode
-	path  string
-	size  uint64
+	*store.File
+	spork *spork.Spork
 }
 
-func newNode(f store.File) node {
+func newNode(f *store.File) node {
 	return node{
-		id:    fuse.NodeID(binary.BigEndian.Uint64([]byte(f.UUID))),
-		isDir: true,
-		mode:  f.Mode,
-		size:  f.Size,
+		File:  f,
+		spork: &spork.S,
 	}
 }
 
 func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
-	log.Debugf("getting attrs for %d", n.id)
-	attr.Inode = uint64(n.id)
-	attr.Mode = n.mode
-	attr.Size = n.size
-	if n.isDir {
-		attr.Mode |= os.ModeDir
-	}
+	log.Debugf("getting attrs for %d", n.Id)
+	attr.Inode = n.Id
+	attr.Mode = n.Mode
+	attr.Size = n.Size
+	attr.Mode = n.Mode
+
 	return nil
 }
 
 func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	log.Debugf("looking up name: %s from %d", name, n.id)
-	f, err := spork.S.Stat(n.path + "/" + name)
+	log.Debugf("lookup of %s: \t%s", n.Name, name)
+	file, err := n.spork.Lookup(n.Id, name)
 	if err != nil {
-		log.Errorf("error while looking up %s: %v", name, err)
-		return nil, err
+		return nil, err // TODO add a parseError function
 	}
-	return newNode(f), nil
+	return newNode(file), nil
 }
 
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {

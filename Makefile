@@ -17,4 +17,4 @@ run: build force-unmount
 	$(BINDIR) $(MOUNTPOINT)
 
 force-unmount:
-	sudo umount --force $(MOUNTPOINT) || echo ''
+	sshpass -f /home/dimitar/.password sudo umount --force $(MOUNTPOINT) || echo ''

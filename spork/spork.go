@@ -1,43 +1,41 @@
 package spork
 
 import (
-	"sync"
 	"time"
 
-	"github.com/dimitarvdimitrov/sporkfs/log"
+	"github.com/dimitarvdimitrov/sporkfs/store/state"
+
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
-var S Spork
-var o = &sync.Once{}
+var S = Spork{
+	state: state.NewDriver(""),
+}
 
 type Spork struct {
+	state state.Driver
 }
 
-func (s Spork) Root() store.File {
-	return store.File{
-		UUID: "00000001",
-		Size: 0,
-		Path: "/",
-		Mode: 0555,
-	}
+func (s Spork) Root() *store.File {
+	return s.state.Root()
 }
 
-func (s Spork) Readdir(path string) ([]store.File, error) {
-	log.Debugf("readdir path: %s", path)
-	var a []store.File
-	o.Do(func() {
-		a = []store.File{
-			{
-				UUID: "00000001",
-				Path: "/my-file.21345rttxt",
-				Size: 1,
-				Mode: 0666,
-			},
+func (s Spork) Readdir(path string) ([]*store.File, error) {
+	return s.state.ReadDir(path)
+}
+
+func (s Spork) ChildrenOf(id uint64) ([]*store.File, error) {
+	return s.state.ChildrenOf(id), nil
+}
+
+func (s Spork) Lookup(id uint64, name string) (*store.File, error) {
+	children := s.state.ChildrenOf(id)
+	for _, c := range children {
+		if c.Name == name {
+			return c, nil
 		}
-	})
-	defer func() { a = nil }()
-	return a, nil
+	}
+	return nil, store.ErrNoSuchFile
 }
 
 func (s Spork) Read(path string) ([]byte, error) {
@@ -50,8 +48,8 @@ func (s Spork) Write(path string, offset uint64, data []byte) error {
 
 func (s Spork) Stat(path string) (store.File, error) {
 	return store.File{
-		UUID: time.Now().String(),
-		Path: "some-name-right",
+		Id:   uint64(time.Now().Unix()),
+		Name: "some-name-right",
 		Mode: 0555,
 		Size: 1,
 	}, nil
