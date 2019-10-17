@@ -11,19 +11,18 @@ import (
 type handle = node
 
 func (n handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	//if n.id != 123 {
-	//	return nil
-	//}
-	//req.Node
-	log.Debug("read on %d with handleID %d and nodeID %d", n.Id, req.Handle, req.Node)
-	resp.Data = []byte("test123_")
-	//spork.S.Read(n.path + "/" + req.)
+	log.Debugf("read on id %d with handleID %d and nodeID %d", n.Id, req.Handle, req.Node)
+	data, err := n.spork.Read(n.File, uint64(req.Offset), uint64(req.Size))
+	if err != nil {
+		return err
+	}
+	resp.Data = data
 	return nil
 }
 
 func (n handle) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	log.Debugf("readdirall on %s: %d", n.Name, n.Id)
-	files, err := n.spork.ChildrenOf(n.Id)
+	files, err := n.spork.ChildrenOf(n.File)
 	if err != nil {
 		return nil, fuse.ENOENT
 	}

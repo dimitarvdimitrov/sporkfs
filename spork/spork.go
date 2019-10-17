@@ -3,33 +3,32 @@ package spork
 import (
 	"time"
 
-	"github.com/dimitarvdimitrov/sporkfs/store/state"
-
 	"github.com/dimitarvdimitrov/sporkfs/store"
+	"github.com/dimitarvdimitrov/sporkfs/store/data"
+	"github.com/dimitarvdimitrov/sporkfs/store/state"
 )
 
 var S = Spork{
 	state: state.NewDriver(""),
+	data:  data.NewLocalDriver("/opt/storage/data"),
 }
 
 type Spork struct {
-	state state.Driver
+	state       state.Driver
+	data, cache data.Driver
 }
 
 func (s Spork) Root() *store.File {
+	s.data.Sync()
 	return s.state.Root()
 }
 
-func (s Spork) Readdir(path string) ([]*store.File, error) {
-	return s.state.ReadDir(path)
+func (s Spork) ChildrenOf(f *store.File) ([]*store.File, error) {
+	return s.state.ChildrenOf(f.Id), nil
 }
 
-func (s Spork) ChildrenOf(id uint64) ([]*store.File, error) {
-	return s.state.ChildrenOf(id), nil
-}
-
-func (s Spork) Lookup(id uint64, name string) (*store.File, error) {
-	children := s.state.ChildrenOf(id)
+func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
+	children := s.state.ChildrenOf(f.Id)
 	for _, c := range children {
 		if c.Name == name {
 			return c, nil
@@ -38,11 +37,15 @@ func (s Spork) Lookup(id uint64, name string) (*store.File, error) {
 	return nil, store.ErrNoSuchFile
 }
 
-func (s Spork) Read(path string) ([]byte, error) {
-	panic("implement me")
+func (s Spork) ReadAll(f *store.File) ([]byte, error) {
+	return s.Read(f, 0, f.Size)
 }
 
-func (s Spork) Write(path string, offset uint64, data []byte) error {
+func (s Spork) Read(f *store.File, offset, size uint64) ([]byte, error) {
+	return s.data.Read(f, offset, size)
+}
+
+func (s Spork) Write(f *store.File, offset uint64, data []byte) error {
 	panic("implement me")
 }
 
