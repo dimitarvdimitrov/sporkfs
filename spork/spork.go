@@ -5,17 +5,17 @@ import (
 
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
-	"github.com/dimitarvdimitrov/sporkfs/store/state"
+	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 )
 
 // TODO remove this
 var S = Spork{
-	state: state.NewDriver(""),
+	state: inventory.NewDriver(""),
 	data:  data.NewLocalDriver("/opt/storage/data"),
 }
 
 type Spork struct {
-	state       state.Driver
+	state       inventory.Driver
 	data, cache data.Driver
 }
 

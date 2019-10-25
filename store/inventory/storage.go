@@ -1,9 +1,9 @@
-package state
+package inventory
 
 import "github.com/dimitarvdimitrov/sporkfs/store"
 
-func readFiles(location string) *fileNode {
-	return &fileNode{
+func readFiles(location string) *store.File {
+	return &store.File{
 		Id:   0,
 		Name: "",
 		Mode: store.ModeDirectory,

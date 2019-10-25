@@ -1,10 +1,9 @@
-package state
+package inventory
 
 import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
-// TODO rename to inventory
 type Driver struct {
 	location string
 	root     *store.File
@@ -23,7 +22,7 @@ func NewDriver(location string) Driver {
 	}
 }
 
-func catalogFiles(root *store.File, catalog map[uint64]*fileNode) {
+func catalogFiles(root *store.File, catalog map[uint64]*store.File) {
 	catalog[root.Id] = root
 	for _, c := range root.Children {
 		catalogFiles(c, catalog)
