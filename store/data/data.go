@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
@@ -39,6 +40,21 @@ func restoreIndex(location string) map[uint64]string {
 		return map[uint64]string{}
 	}
 	return index
+}
+
+func (d localDriver) Add(file *store.File) error {
+	if _, ok := d.index[file.Id]; ok {
+		return store.ErrFileAlreadyExists
+	}
+
+	filePath := strconv.FormatUint(file.Id, 16)
+	d.index[file.Id] = filePath
+	f, err := os.OpenFile(d.location+filePath, os.O_CREATE|os.O_EXCL, file.Mode)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return nil
 }
 
 func (d localDriver) Read(file *store.File, offset, size uint64) ([]byte, error) {

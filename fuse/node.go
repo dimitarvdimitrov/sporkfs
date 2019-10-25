@@ -44,3 +44,12 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	return handle(n), nil
 }
+
+func (n node) Create(ctx context.Context, req *fuse.CreateRequest, _ *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+	f, err := n.spork.CreateFile(n.File, req.Name, req.Mode)
+	if err != nil {
+		return nil, nil, err // TODO parse error
+	}
+	node := newNode(f)
+	return node, handle(node), nil
+}

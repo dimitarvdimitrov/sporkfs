@@ -1,24 +1,26 @@
 package spork
 
 import (
+	"time"
+
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 )
 
 var S = Spork{
-	state: inventory.NewDriver(""),
-	data:  data.NewLocalDriver("/opt/storage/data"),
+	inventory: inventory.NewDriver(""),
+	data:      data.NewLocalDriver("/opt/storage/data"),
 }
 
 type Spork struct {
-	state       inventory.Driver
+	inventory   inventory.Driver
 	data, cache data.Driver
 }
 
 func (s Spork) Root() *store.File {
 	s.data.Sync() // TODO remove this
-	return s.state.Root()
+	return s.inventory.Root()
 }
 
 func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
@@ -52,6 +54,39 @@ func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, 
 	}()
 
 	return s.data.Write(f, offset, data, flags)
+}
+
+func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) (*store.File, error) {
+	parent.Lock()
+	defer parent.Unlock()
+
+	f := s.newFile(name, mode)
+	f.Lock()
+	defer f.Unlock()
+
+	err := s.inventory.Add(f)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.data.Add(f)
+	if err != nil {
+		s.inventory.Remove(f.Id)
+		return nil, err
+	}
+
+	parent.Children = append(parent.Children, f)
+	return f, nil
+}
+
+func (s Spork) newFile(name string, mode store.FileMode) *store.File {
+	return &store.File{
+		Id:       uint64(time.Now().Nanosecond()),
+		Name:     name,
+		Mode:     mode,
+		Size:     0,
+		Children: nil,
+	}
 }
 
 func (s Spork) Close() {
