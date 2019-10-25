@@ -42,5 +42,5 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 }
 
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	return n, nil
+	return handle(n), nil
 }

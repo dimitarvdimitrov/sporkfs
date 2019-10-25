@@ -1,14 +1,11 @@
 package spork
 
 import (
-	"time"
-
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 )
 
-// TODO remove this
 var S = Spork{
 	state: inventory.NewDriver(""),
 	data:  data.NewLocalDriver("/opt/storage/data"),
@@ -20,7 +17,7 @@ type Spork struct {
 }
 
 func (s Spork) Root() *store.File {
-	s.data.Sync()
+	s.data.Sync() // TODO remove this
 	return s.state.Root()
 }
 
@@ -34,22 +31,25 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 }
 
 func (s Spork) ReadAll(f *store.File) ([]byte, error) {
+	f.RLock()
+	defer f.RUnlock()
+
 	return s.Read(f, 0, f.Size)
 }
 
 func (s Spork) Read(f *store.File, offset, size uint64) ([]byte, error) {
+	f.RLock()
+	defer f.RUnlock()
+
 	return s.data.Read(f, offset, size)
 }
 
-func (s Spork) Write(f *store.File, offset uint64, data []byte) error {
-	panic("implement me")
-}
+func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, error) {
+	f.Lock()
+	defer f.Unlock()
+	defer func() {
+		f.Size = uint64(s.data.Size(f))
+	}()
 
-func (s Spork) Stat(path string) (store.File, error) {
-	return store.File{
-		Id:   uint64(time.Now().Unix()),
-		Name: "some-name-right",
-		Mode: 0555,
-		Size: 1,
-	}, nil
+	return s.data.Write(f, offset, data, flags)
 }

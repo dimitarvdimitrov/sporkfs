@@ -5,7 +5,6 @@ import (
 
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
-	"github.com/golang/glog"
 	"github.com/seaweedfs/fuse"
 	"github.com/seaweedfs/fuse/fs"
 )
@@ -23,7 +22,7 @@ func main() {
 	)
 
 	if err != nil {
-		glog.Fatal("couldn't start up: ", err)
+		log.Fatal("couldn't start up: ", err)
 	}
 	defer c.Close()
 
@@ -34,10 +33,5 @@ func main() {
 		log.Fatal("couldn't listen start fuse server")
 	}
 
-	log.Info("started sporkfs")
-
-	<-c.Ready
-	if c.MountError != nil {
-		log.Fatal(c.MountError)
-	}
+	log.Info("stopping")
 }

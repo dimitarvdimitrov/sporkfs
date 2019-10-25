@@ -17,7 +17,7 @@ type localDriver struct {
 
 func NewLocalDriver(location string) localDriver {
 	return localDriver{
-		location: location,
+		location: location + "/",
 		index:    restoreIndex(location),
 	}
 }
@@ -46,7 +46,7 @@ func (d localDriver) Read(file *store.File, offset, size uint64) ([]byte, error)
 	if !exists {
 		return nil, fmt.Errorf("local disk: %w", store.ErrNoSuchFile)
 	}
-	f, err := os.Open(d.location + "/" + location)
+	f, err := os.Open(d.location + location)
 	if err != nil {
 		panic(fmt.Errorf("file id=%d was in index but not on disk: %w", file.Id, err))
 	}
@@ -65,6 +65,54 @@ func min(a, b uint64) uint64 {
 		return b
 	}
 	return a
+}
+
+func (d localDriver) Write(f *store.File, offset int64, data []byte, flags int) (int, error) {
+	location, exists := d.index[f.Id]
+	if !exists {
+		return 0, store.ErrNoSuchFile
+	}
+
+	if flags&os.O_APPEND != 0 {
+		return write(d.location+location, data, flags)
+	} else {
+		return writeAt(d.location+location, offset, data, flags)
+	}
+}
+
+func writeAt(path string, offset int64, data []byte, flags int) (int, error) {
+	f, err := os.OpenFile(path, flags, store.ModeRegularFile)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	return f.WriteAt(data, offset)
+}
+
+func write(path string, data []byte, flags int) (int, error) {
+	f, err := os.OpenFile(path, flags, store.ModeRegularFile)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	return f.Write(data)
+}
+
+func (d localDriver) Size(f *store.File) int {
+	descriptor, err := os.Open(d.location + d.index[f.Id])
+	if err != nil {
+		return 0
+	}
+	defer descriptor.Close()
+
+	info, err := descriptor.Stat()
+	if err != nil {
+		return 0
+	}
+
+	return int(info.Size())
 }
 
 func (d localDriver) Sync() {

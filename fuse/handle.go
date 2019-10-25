@@ -8,11 +8,11 @@ import (
 	"github.com/seaweedfs/fuse"
 )
 
-type handle = node
+type handle node
 
-func (n handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	log.Debugf("read on id %d with handleID %d and nodeID %d", n.Id, req.Handle, req.Node)
-	data, err := n.spork.Read(n.File, uint64(req.Offset), uint64(req.Size))
+func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	log.Debugf("read on id %d with handleID %d and nodeID %d", h.Id, req.Handle, req.Node)
+	data, err := h.spork.Read(h.File, uint64(req.Offset), uint64(req.Size))
 	if err != nil {
 		return err
 	}
@@ -20,10 +20,19 @@ func (n handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Read
 	return nil
 }
 
-func (n handle) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	log.Debugf("readdirall on %s: %d", n.Name, n.Id)
-	files := n.File.Children
+func (h handle) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	log.Debugf("readdirall on %s: %d", h.Name, h.Id)
+	files := h.File.Children
 	return toDirEnts(files), nil
+}
+
+func (h handle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) (err error) {
+	log.Debugf("write on %d", req.Node)
+	resp.Size, err = h.spork.Write(h.File, req.Offset, req.Data, int(req.FileFlags))
+	if err != nil {
+		log.Errorf("error writing: %s", err)
+	}
+	return
 }
 
 func toDirEnts(files []*store.File) []fuse.Dirent {
