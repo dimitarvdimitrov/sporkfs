@@ -53,3 +53,7 @@ func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, 
 
 	return s.data.Write(f, offset, data, flags)
 }
+
+func (s Spork) Close() {
+	s.data.Sync()
+}

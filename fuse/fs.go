@@ -11,3 +11,7 @@ type Fs struct {
 func (f Fs) Root() (fs.Node, error) {
 	return newNode(spork.S.Root()), nil
 }
+
+func (f Fs) Close() {
+	spork.S.Close()
+}

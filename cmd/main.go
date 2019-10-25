@@ -27,11 +27,13 @@ func main() {
 	defer c.Close()
 
 	log.Infof("starting sporkfs...")
+	vfs := sfuse.Fs{}
+	defer vfs.Close()
 
-	err = fs.Serve(c, sfuse.Fs{})
+	err = fs.Serve(c, vfs)
 	if err != nil {
 		log.Fatal("couldn't listen start fuse server")
 	}
 
-	log.Info("stopping")
+	log.Info("stopping...")
 }
