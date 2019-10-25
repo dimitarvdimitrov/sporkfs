@@ -7,7 +7,7 @@ func readFiles(location string) *fileNode {
 		File: &store.File{
 			Id:   0,
 			Name: "",
-			Mode: store.Directory,
+			Mode: store.ModeDirectory,
 			Size: 1,
 		},
 		children: []*fileNode{
@@ -15,7 +15,7 @@ func readFiles(location string) *fileNode {
 				File: &store.File{
 					Id:   2,
 					Name: "2.txt",
-					Mode: store.RegularFile,
+					Mode: store.ModeRegularFile,
 					Size: 5,
 				},
 			},
@@ -23,7 +23,7 @@ func readFiles(location string) *fileNode {
 				File: &store.File{
 					Id:   3,
 					Name: "3",
-					Mode: store.Directory,
+					Mode: store.ModeDirectory,
 					Size: 1,
 				},
 				children: []*fileNode{
@@ -31,7 +31,7 @@ func readFiles(location string) *fileNode {
 						File: &store.File{
 							Id:   4,
 							Name: "4.txt",
-							Mode: store.RegularFile,
+							Mode: store.ModeRegularFile,
 							Size: 5,
 						},
 					},
@@ -39,7 +39,7 @@ func readFiles(location string) *fileNode {
 						File: &store.File{
 							Id:   5,
 							Name: "5.txt",
-							Mode: store.RegularFile,
+							Mode: store.ModeRegularFile,
 							Size: 5,
 						},
 					},

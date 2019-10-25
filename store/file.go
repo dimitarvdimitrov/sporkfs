@@ -7,9 +7,8 @@ import (
 type FileMode = os.FileMode
 
 const (
-	// TODO rename to contain mode
-	Directory   FileMode = os.ModeDir
-	RegularFile FileMode = 0666
+	ModeDirectory   FileMode = os.ModeDir
+	ModeRegularFile FileMode = 0666
 )
 
 type File struct {

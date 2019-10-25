@@ -34,7 +34,7 @@ func toDirEnts(files []*store.File) []fuse.Dirent {
 	for i, f := range files {
 		typ := fuse.DT_File
 
-		if f.Mode == store.Directory {
+		if f.Mode == store.ModeDirectory {
 			typ = fuse.DT_Dir
 		}
 

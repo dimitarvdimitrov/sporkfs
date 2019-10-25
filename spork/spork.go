@@ -8,6 +8,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store/state"
 )
 
+// TODO remove this
 var S = Spork{
 	state: state.NewDriver(""),
 	data:  data.NewLocalDriver("/opt/storage/data"),
