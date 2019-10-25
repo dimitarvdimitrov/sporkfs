@@ -32,3 +32,11 @@ func catalogFiles(root *store.File, catalog map[uint64]*store.File) {
 func (d Driver) Root() *store.File {
 	return d.root
 }
+
+func (d Driver) Get(id uint64) (*store.File, error) {
+	file, exists := d.catalog[id]
+	if !exists {
+		return nil, store.ErrNoSuchFile
+	}
+	return file, nil
+}

@@ -27,8 +27,8 @@ func restoreIndex(location string) map[uint64]string {
 	index := map[uint64]string{}
 	f, err := os.Open(location + "/index")
 	if err != nil {
-		log.Errorf("couldn't load persisted index, starting fresh: %w", err)
-		return index
+		log.Fatal("couldn't load persisted index, starting fresh: %w", err)
+		return nil
 	}
 	defer f.Close()
 
