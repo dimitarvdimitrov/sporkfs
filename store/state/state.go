@@ -33,10 +33,3 @@ func catalogFiles(root *store.File, catalog map[uint64]*fileNode) {
 func (d Driver) Root() *store.File {
 	return d.root
 }
-
-func (d Driver) ChildrenOf(id uint64) []*store.File {
-	if node, ok := d.catalog[id]; ok {
-		return convertNodes(node.Children)
-	}
-	return nil
-}

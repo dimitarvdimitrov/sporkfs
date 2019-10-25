@@ -24,13 +24,8 @@ func (s Spork) Root() *store.File {
 	return s.state.Root()
 }
 
-func (s Spork) ChildrenOf(f *store.File) ([]*store.File, error) {
-	return s.state.ChildrenOf(f.Id), nil
-}
-
 func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
-	children := s.state.ChildrenOf(f.Id)
-	for _, c := range children {
+	for _, c := range f.Children {
 		if c.Name == name {
 			return c, nil
 		}

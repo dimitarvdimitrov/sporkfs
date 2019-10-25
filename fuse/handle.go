@@ -22,10 +22,7 @@ func (n handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Read
 
 func (n handle) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	log.Debugf("readdirall on %s: %d", n.Name, n.Id)
-	files, err := n.spork.ChildrenOf(n.File)
-	if err != nil {
-		return nil, fuse.ENOENT
-	}
+	files := n.File.Children
 	return toDirEnts(files), nil
 }
 
