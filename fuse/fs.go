@@ -1,7 +1,10 @@
 package fuse
 
 import (
+	"syscall"
+
 	"github.com/dimitarvdimitrov/sporkfs/spork"
+	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/seaweedfs/fuse/fs"
 )
 
@@ -14,4 +17,17 @@ func (f Fs) Root() (fs.Node, error) {
 
 func (f Fs) Close() {
 	spork.S.Close()
+}
+
+func parseError(err error) syscall.Errno {
+	switch err {
+	case nil:
+		return syscall.Errno(0)
+	case store.ErrNoSuchFile:
+		return syscall.ENOENT
+	case store.ErrFileAlreadyExists:
+		return syscall.EEXIST
+	default:
+		return syscall.ENOMSG
+	}
 }

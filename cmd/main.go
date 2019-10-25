@@ -32,7 +32,7 @@ func main() {
 
 	err = fs.Serve(c, vfs)
 	if err != nil {
-		log.Fatal("couldn't listen start fuse server")
+		log.Fatal("serve: ", err)
 	}
 
 	log.Info("stopping...")

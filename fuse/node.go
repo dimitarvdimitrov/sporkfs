@@ -35,10 +35,7 @@ func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
 func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	log.Debugf("lookup of %s: \t%s", n.Name, name)
 	file, err := n.spork.Lookup(n.File, name)
-	if err != nil {
-		return nil, err // TODO add a parseError function
-	}
-	return newNode(file), nil
+	return newNode(file), parseError(err)
 }
 
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
@@ -48,7 +45,7 @@ func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 func (n node) Create(ctx context.Context, req *fuse.CreateRequest, _ *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	f, err := n.spork.CreateFile(n.File, req.Name, req.Mode)
 	if err != nil {
-		return nil, nil, err // TODO parse error
+		return nil, nil, parseError(err)
 	}
 	node := newNode(f)
 	return node, handle(node), nil

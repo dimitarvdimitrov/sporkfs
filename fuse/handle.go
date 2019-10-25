@@ -14,7 +14,7 @@ func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Read
 	log.Debugf("read on id %d with handleID %d and nodeID %d", h.Id, req.Handle, req.Node)
 	data, err := h.spork.Read(h.File, uint64(req.Offset), uint64(req.Size))
 	if err != nil {
-		return err
+		return parseError(err)
 	}
 	resp.Data = data
 	return nil
@@ -32,7 +32,7 @@ func (h handle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wr
 	if err != nil {
 		log.Errorf("error writing: %s", err)
 	}
-	return
+	return parseError(err)
 }
 
 func toDirEnts(files []*store.File) []fuse.Dirent {
