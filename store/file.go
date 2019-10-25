@@ -16,4 +16,6 @@ type File struct {
 	Name string
 	Mode FileMode
 	Size uint64
+
+	Children []*File
 }
