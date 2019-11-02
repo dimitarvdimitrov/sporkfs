@@ -106,3 +106,8 @@ func (n node) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 //	newFile := n.spork.Link(sourceNode.File, n.File, req.NewName)
 //	return newNode(newFile), nil
 //}
+
+// TODO keep an eye if this is still acceptable
+func (n node) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	return nil
+}
