@@ -23,11 +23,11 @@ func newNode(f *store.File) node {
 }
 
 func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
-	log.Debugf("getting attrs for %d", n.Id)
 	attr.Inode = n.Id
 	attr.Mode = n.Mode
 	attr.Size = n.Size
 	attr.Mode = n.Mode
+	log.Debugf("getting attrs for %d; %s", n.Id, attr)
 
 	return nil
 }
@@ -45,11 +45,20 @@ func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 	return handle(n), nil
 }
 
-func (n node) Create(ctx context.Context, req *fuse.CreateRequest, _ *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	f, err := n.spork.CreateFile(n.File, req.Name, req.Mode)
 	if err != nil {
 		return nil, nil, parseError(err)
 	}
 	node := newNode(f)
 	return node, handle(node), nil
+}
+
+func (n node) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
+	f, err := n.spork.CreateFile(n.File, req.Name, req.Mode)
+	if err != nil {
+		return nil, parseError(err)
+	}
+	node := newNode(f)
+	return node, nil
 }

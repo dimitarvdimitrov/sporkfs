@@ -6,7 +6,7 @@ func readFiles(location string) *store.File {
 	return &store.File{
 		Id:   0,
 		Name: "",
-		Mode: store.ModeDirectory,
+		Mode: store.ModeDirectory | 0666,
 		Size: 1,
 		Children: []*store.File{
 			{

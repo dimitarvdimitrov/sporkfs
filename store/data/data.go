@@ -47,6 +47,10 @@ func (d localDriver) Add(file *store.File) error {
 		return store.ErrFileAlreadyExists
 	}
 
+	if file.Mode&store.ModeDirectory != 0 {
+		return nil // noop if it's a dir
+	}
+
 	filePath := strconv.FormatUint(file.Id, 16)
 	d.index[file.Id] = filePath
 	f, err := os.OpenFile(d.location+filePath, os.O_CREATE|os.O_EXCL, file.Mode)
