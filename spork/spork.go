@@ -2,7 +2,6 @@ package spork
 
 import (
 	"sync"
-	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
@@ -82,7 +81,7 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 	return &store.File{
 		RWMutex:  &sync.RWMutex{},
-		Id:       uint64(time.Now().Nanosecond()),
+		Id:       s.inventory.NewId(),
 		Name:     name,
 		Mode:     mode,
 		Size:     0,

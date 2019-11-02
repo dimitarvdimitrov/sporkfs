@@ -3,6 +3,7 @@ module github.com/dimitarvdimitrov/sporkfs
 go 1.13
 
 require (
+	github.com/google/uuid v1.1.1
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/seaweedfs/fuse v0.0.0-20190510212405-310228904eff
 	github.com/stretchr/testify v1.4.0 // indirect
