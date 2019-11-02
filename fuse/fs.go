@@ -7,14 +7,13 @@ import (
 	"github.com/seaweedfs/fuse/fs"
 )
 
-type Fs struct {
-}
+type Fs struct{}
 
 func (f Fs) Root() (fs.Node, error) {
 	return newNode(spork.S.Root()), nil
 }
 
-func (f Fs) Close() {
+func (f Fs) Destroy() {
 	spork.S.Close()
 }
 

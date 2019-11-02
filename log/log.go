@@ -69,3 +69,7 @@ func Errorf(format string, args ...interface{}) {
 func Fatal(args ...interface{}) {
 	l.Fatal(args...)
 }
+
+func Fatalf(format string, args ...interface{}) {
+	l.Fatalf(format, args...)
+}

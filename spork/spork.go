@@ -9,7 +9,7 @@ import (
 )
 
 var S = Spork{
-	inventory: inventory.NewDriver(""),
+	inventory: inventory.NewDriver("/opt/storage/inventory"),
 	data:      data.NewLocalDriver("/opt/storage/data"),
 }
 
@@ -91,4 +91,5 @@ func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 
 func (s Spork) Close() {
 	s.data.Sync()
+	s.inventory.Sync()
 }
