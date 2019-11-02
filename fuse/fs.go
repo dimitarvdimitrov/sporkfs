@@ -19,15 +19,13 @@ func (f Fs) Close() {
 	spork.S.Close()
 }
 
-func parseError(err error) syscall.Errno {
+func parseError(err error) error {
 	switch err {
-	case nil:
-		return syscall.Errno(0)
 	case store.ErrNoSuchFile:
 		return syscall.ENOENT
 	case store.ErrFileAlreadyExists:
 		return syscall.EEXIST
 	default:
-		return syscall.ENOMSG
+		return err
 	}
 }

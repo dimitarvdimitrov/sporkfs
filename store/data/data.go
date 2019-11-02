@@ -91,8 +91,13 @@ func (d localDriver) Write(f *store.File, offset int64, data []byte, flags int) 
 
 	if flags&os.O_APPEND != 0 {
 		return write(d.location+location, data, flags)
-	} else {
+	} else if offset > 0 {
 		return writeAt(d.location+location, offset, data, flags)
+	} else {
+		if flags&os.O_TRUNC == 0 && flags&os.O_CREATE == 0 {
+			flags = flags | os.O_TRUNC
+		}
+		return write(d.location+location, data, flags)
 	}
 }
 
