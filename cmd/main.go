@@ -28,6 +28,7 @@ func main() {
 
 	log.Infof("starting sporkfs...")
 	vfs := sfuse.Fs{}
+	defer vfs.Destroy()
 
 	err = fs.Serve(c, vfs)
 	if err != nil {

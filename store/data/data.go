@@ -61,6 +61,11 @@ func (d localDriver) Add(file *store.File) error {
 	return nil
 }
 
+func (d localDriver) Remove(id uint64) {
+	log.Error(os.Remove(d.location + d.index[id]))
+	delete(d.index, id)
+}
+
 func (d localDriver) Read(file *store.File, offset, size uint64) ([]byte, error) {
 	location, exists := d.index[file.Id]
 	if !exists {

@@ -15,9 +15,10 @@ type Driver struct {
 }
 
 func NewDriver(location string) Driver {
-	root := readFiles(location)
+	root := restoreInventory(location + indexLocation)
 	c := make(map[uint64]*store.File)
 	catalogFiles(root, c)
+	initLocks(root, c)
 
 	return Driver{
 		location: location,
@@ -30,6 +31,17 @@ func catalogFiles(root *store.File, catalog map[uint64]*store.File) {
 	catalog[root.Id] = root
 	for _, c := range root.Children {
 		catalogFiles(c, catalog)
+	}
+}
+
+func initLocks(root *store.File, catalog map[uint64]*store.File) {
+	if existingRoot, ok := catalog[root.Id]; ok && existingRoot.RWMutex != nil {
+		root.RWMutex = existingRoot.RWMutex
+	} else {
+		root.RWMutex = &sync.RWMutex{}
+	}
+	for _, c := range root.Children {
+		initLocks(c, catalog)
 	}
 }
 

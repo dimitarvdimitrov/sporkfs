@@ -1,6 +1,7 @@
 package spork
 
 import (
+	"sync"
 	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/store"
@@ -19,7 +20,6 @@ type Spork struct {
 }
 
 func (s Spork) Root() *store.File {
-	s.data.Sync() // TODO remove this
 	return s.inventory.Root()
 }
 
@@ -81,6 +81,7 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 
 func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 	return &store.File{
+		RWMutex:  &sync.RWMutex{},
 		Id:       uint64(time.Now().Nanosecond()),
 		Name:     name,
 		Mode:     mode,
@@ -88,6 +89,76 @@ func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 		Children: nil,
 	}
 }
+
+func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) error {
+	oldParent.Lock()
+	defer oldParent.Unlock()
+
+	file.Lock()
+	defer file.Unlock()
+
+	file.Name = newName
+
+	if oldParent.Id != newParent.Id {
+		newParent.Lock()
+		defer newParent.Unlock()
+
+		for i, c := range oldParent.Children {
+			if c.Id == file.Id {
+				oldParent.Children = append(oldParent.Children[:i], oldParent.Children[i+1:]...)
+				break
+			}
+		}
+
+		newParent.Children = append(newParent.Children, file)
+	}
+
+	return nil
+}
+
+func (s Spork) Delete(file, parent *store.File) error {
+	if len(file.Children) != 0 {
+		return store.ErrDirectoryNotEmpty
+	}
+
+	file.Lock()
+	defer file.Unlock()
+
+	parent.Lock()
+	defer parent.Unlock()
+
+	found := false
+	for i, c := range parent.Children {
+		if c.Id == file.Id {
+			s.data.Remove(file.Id)
+			s.inventory.Remove(file.Id)
+			parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
+
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return store.ErrNoSuchFile
+	}
+
+	return nil
+}
+
+//func (s Spork) Link(file, newParent *store.File, name string) *store.File {
+//	file.RLock()
+//	defer file.RUnlock()
+//
+//	newParent.Lock()
+//	defer newParent.Unlock()
+//
+//	newFile := file.Copy()
+//	newFile.Name = name
+//	newParent.Children = append(newParent.Children, newFile)
+//
+//	return newFile
+//}
 
 func (s Spork) Close() {
 	s.data.Sync()

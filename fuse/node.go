@@ -2,6 +2,8 @@ package fuse
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -46,19 +48,61 @@ func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 }
 
 func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	f, err := n.spork.CreateFile(n.File, req.Name, req.Mode)
+	f, err := n.create(ctx, req.Name, req.Mode)
 	if err != nil {
-		return nil, nil, parseError(err)
+		return nil, nil, err
 	}
 	node := newNode(f)
 	return node, handle(node), nil
 }
 
 func (n node) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	f, err := n.spork.CreateFile(n.File, req.Name, req.Mode)
+	newFile, err := n.create(ctx, req.Name, req.Mode)
+	if err != nil {
+		return nil, err
+	}
+	return newNode(newFile), nil
+}
+
+func (n node) create(ctx context.Context, name string, mode os.FileMode) (*store.File, error) {
+	f, err := n.spork.CreateFile(n.File, name, mode)
 	if err != nil {
 		return nil, parseError(err)
 	}
-	node := newNode(f)
-	return node, nil
+	return f, nil
 }
+
+func (n node) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
+	newParent, ok := newDir.(node)
+	if !ok {
+		err := fmt.Errorf("passed node to node.Rename() is of type %T, not %T", newDir, n)
+		log.Error(err)
+		return err
+	}
+	file, err := n.spork.Lookup(n.File, req.OldName)
+	if err != nil {
+		return parseError(err)
+	}
+
+	return n.spork.Rename(file, n.File, newParent.File, req.NewName)
+}
+
+func (n node) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
+	file, err := n.spork.Lookup(n.File, req.Name)
+	if err != nil {
+		return err
+	}
+	return parseError(n.spork.Delete(file, n.File))
+}
+
+//func (n node) Link(ctx context.Context, req *fuse.LinkRequest, source fs.Node) (fs.Node, error) {
+//	sourceNode, ok := source.(node)
+//	if !ok {
+//		err := fmt.Errorf("passed node to node.Link() is of type %T, not %T", source, n)
+//		log.Error(err)
+//		return nil, err
+//	}
+//
+//	newFile := n.spork.Link(sourceNode.File, n.File, req.NewName)
+//	return newNode(newFile), nil
+//}

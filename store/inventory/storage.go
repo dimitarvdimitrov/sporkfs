@@ -9,6 +9,10 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
+const (
+	indexLocation = "/index"
+)
+
 var root = &store.File{
 	Id:   0,
 	Name: "",
@@ -45,11 +49,12 @@ var root = &store.File{
 }
 
 func (d Driver) Sync() {
-	d.persistCatalog()
+	d.persistInventory()
 }
 
-func (d Driver) persistCatalog() {
-	f, err := os.Create(d.location + "/index")
+// persistInventory saves the file structure on disk starting with the root node
+func (d Driver) persistInventory() {
+	f, err := os.Create(d.location + indexLocation)
 	if err != nil {
 		log.Errorf("couldn't persist index at %s: %w", d.location, err)
 	}
@@ -61,8 +66,7 @@ func (d Driver) persistCatalog() {
 	}
 }
 
-func readFiles(location string) *store.File {
-	location = location + "/index"
+func restoreInventory(location string) *store.File {
 	f, err := os.OpenFile(location, os.O_RDONLY, store.ModeRegularFile)
 	if err != nil {
 		log.Fatal(fmt.Errorf("couldn't open inventory index %w", err))

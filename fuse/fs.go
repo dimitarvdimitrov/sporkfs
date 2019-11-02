@@ -1,6 +1,8 @@
 package fuse
 
 import (
+	"syscall"
+
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/seaweedfs/fuse"
@@ -23,6 +25,8 @@ func parseError(err error) error {
 		return fuse.ENOENT
 	case store.ErrFileAlreadyExists:
 		return fuse.EEXIST
+	case store.ErrDirectoryNotEmpty:
+		return fuse.Errno(syscall.ENOTEMPTY)
 	default:
 		return err
 	}
