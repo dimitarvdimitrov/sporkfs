@@ -12,7 +12,7 @@ type handle node
 
 func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	log.Debugf("read on id %d with handleID %d and nodeID %d", h.Id, req.Handle, req.Node)
-	data, err := h.spork.Read(h.File, uint64(req.Offset), uint64(req.Size))
+	data, err := h.spork.Read(h.File, req.Offset, int64(req.Size))
 	if err != nil {
 		return parseError(err)
 	}

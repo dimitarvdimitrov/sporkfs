@@ -27,7 +27,7 @@ func newNode(f *store.File, s *spork.Spork) node {
 func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Inode = n.Id
 	attr.Mode = n.Mode
-	attr.Size = n.Size
+	attr.Size = uint64(n.Size)
 	attr.Mode = n.Mode
 	log.Debugf("getting attrs for %d; %s", n.Id, attr)
 

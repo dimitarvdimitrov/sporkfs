@@ -66,7 +66,7 @@ func (d localDriver) Remove(id uint64) {
 	delete(d.index, id)
 }
 
-func (d localDriver) Read(file *store.File, offset, size uint64) ([]byte, error) {
+func (d localDriver) Read(file *store.File, offset, size int64) ([]byte, error) {
 	location, exists := d.index[file.Id]
 	if !exists {
 		return nil, fmt.Errorf("local disk: %w", store.ErrNoSuchFile)
@@ -85,7 +85,7 @@ func (d localDriver) Read(file *store.File, offset, size uint64) ([]byte, error)
 	return data[:n], nil
 }
 
-func min(a, b uint64) uint64 {
+func min(a, b int64) int64 {
 	if a > b {
 		return b
 	}
@@ -130,7 +130,7 @@ func write(path string, data []byte, flags int) (int, error) {
 	return f.Write(data)
 }
 
-func (d localDriver) Size(f *store.File) int {
+func (d localDriver) Size(f *store.File) int64 {
 	descriptor, err := os.Open(d.location + d.index[f.Id])
 	if err != nil {
 		return 0
@@ -142,7 +142,7 @@ func (d localDriver) Size(f *store.File) int {
 		return 0
 	}
 
-	return int(info.Size())
+	return info.Size()
 }
 
 func (d localDriver) Sync() {

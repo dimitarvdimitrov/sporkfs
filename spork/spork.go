@@ -24,6 +24,10 @@ func (s Spork) Root() *store.File {
 	return s.inventory.Root()
 }
 
+func (s Spork) Get(id uint64) (*store.File, error) {
+	return s.inventory.Get(id)
+}
+
 func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 	for _, c := range f.Children {
 		if c.Name == name {
@@ -40,7 +44,7 @@ func (s Spork) ReadAll(f *store.File) ([]byte, error) {
 	return s.Read(f, 0, f.Size)
 }
 
-func (s Spork) Read(f *store.File, offset, size uint64) ([]byte, error) {
+func (s Spork) Read(f *store.File, offset, size int64) ([]byte, error) {
 	f.RLock()
 	defer f.RUnlock()
 
@@ -51,7 +55,7 @@ func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, 
 	f.Lock()
 	defer f.Unlock()
 	defer func() {
-		f.Size = uint64(s.data.Size(f))
+		f.Size = s.data.Size(f)
 	}()
 
 	return s.data.Write(f, offset, data, flags)

@@ -6,8 +6,8 @@ import "github.com/dimitarvdimitrov/sporkfs/store"
 type Driver interface {
 	Add(file *store.File) error
 	Remove(id uint64)
-	Read(file *store.File, offset, size uint64) ([]byte, error)
+	Read(file *store.File, offset, size int64) ([]byte, error)
 	Write(file *store.File, offset int64, data []byte, flags int) (int, error)
 	Sync()
-	Size(f *store.File) int
+	Size(f *store.File) int64
 }

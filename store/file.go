@@ -18,7 +18,7 @@ type File struct {
 	Id   uint64
 	Name string
 	Mode FileMode
-	Size uint64 // TODO change to int64
+	Size int64
 
 	Children []*File
 }
