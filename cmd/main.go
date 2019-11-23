@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
@@ -41,4 +42,11 @@ func main() {
 	}
 
 	log.Info("stopping...")
+}
+
+func newSporkConfig(dir string) spork.Config {
+	return spork.Config{
+		InventoryLocation: fmt.Sprintf("%s/%s", dir, "inventory"),
+		DataLocation:      fmt.Sprintf("%s/%s", dir, "data"),
+	}
 }
