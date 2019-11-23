@@ -19,3 +19,6 @@ run: build force-unmount
 
 force-unmount:
 	sshpass -f /home/dimitar/.password sudo umount --force $(MOUNTPOINT) || echo ''
+
+protos:
+	protoc -I api/pb api/pb/sporkserver.proto --go_out=plugins=grpc:api/pb

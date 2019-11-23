@@ -70,11 +70,6 @@ func (s *E2eSuite) TestCreateDirWithFiles() {
 	}()
 
 	s.FileExists(tmpFile.Name())
-
-	filesInDir, err := ioutil.ReadDir(tmpDir)
-	s.NoError(err)
-	s.Len(filesInDir, 1)
-	s.Equal(filesInDir[0].Name(), path.Base(tmpFile.Name()))
 }
 
 func (s *E2eSuite) TestRenameFile() {
