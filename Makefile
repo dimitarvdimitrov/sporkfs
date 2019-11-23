@@ -1,4 +1,5 @@
 MOUNTPOINT:=/mnt/sporkfs
+DATADIR:=/opt/storage
 BINDIR:=bin/sporkfs
 MAIN:=cmd/main.go
 
@@ -15,7 +16,7 @@ build:
 	go build -o $(BINDIR) $(MAIN)
 
 run: build force-unmount
-	$(BINDIR) $(MOUNTPOINT)
+	$(BINDIR) $(MOUNTPOINT) $(DATADIR)
 
 force-unmount:
 	sshpass -f /home/dimitar/.password sudo umount --force $(MOUNTPOINT) || echo ''

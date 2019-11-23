@@ -21,7 +21,7 @@ func init() {
 	consoleErrors := zapcore.Lock(os.Stderr)
 	ecfg := zap.NewProductionEncoderConfig()
 	ecfg.EncodeTime = func(time time.Time, encoder zapcore.PrimitiveArrayEncoder) {
-		encoder.AppendInt64(time.Unix())
+		encoder.AppendString(time.Format("2006-01-02T15:04:05.000"))
 	}
 	consoleEncoder := zapcore.NewConsoleEncoder(ecfg)
 
