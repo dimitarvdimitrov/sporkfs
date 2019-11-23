@@ -29,7 +29,7 @@ func (s *E2eSuite) TestCreateEmptyFile() {
 	s.NoError(err)
 }
 
-func (s *E2eSuite) TestCreateAndWrite() {
+func (s *E2eSuite) TestCreateFileAndWrite() {
 	tmpFile, err := ioutil.TempFile(s.mountDir, "non-empty-file-")
 	s.NoError(err)
 	defer func() {
@@ -47,13 +47,18 @@ func (s *E2eSuite) TestCreateAndWrite() {
 	s.Equal(contentToWrite, contentFound)
 }
 
-func (s *E2eSuite) TestCreateEmptyDirectory() {
+func (s *E2eSuite) TestCreateEmptyDir() {
 	tmpDir, err := ioutil.TempDir(s.mountDir, "empty-dir-")
 	s.NoError(err)
-	s.NoError(os.RemoveAll(tmpDir))
+	defer func() {
+		s.NoError(os.RemoveAll(tmpDir))
+	}()
+
+	_, err = os.Stat(tmpDir)
+	s.NoError(err)
 }
 
-func (s *E2eSuite) TestCreateDirectoryWithFiles() {
+func (s *E2eSuite) TestCreateDirWithFiles() {
 	tmpDir, err := ioutil.TempDir(s.mountDir, "non-empty-dir-")
 	s.NoError(err)
 	defer func() {
@@ -82,8 +87,6 @@ func (s *E2eSuite) SetupSuite() {
 
 	s.mountDir, err = ioutil.TempDir("/mnt", "spork")
 	s.Require().NoError(err)
-
-	s.T().Log(os.Getwd())
 
 	s.sporkProcess = exec.Command("../bin/sporkfs", s.mountDir, s.dataDir)
 	s.Require().NoError(s.sporkProcess.Start())
