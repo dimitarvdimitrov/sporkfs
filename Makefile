@@ -4,7 +4,8 @@ MAIN:=cmd/main.go
 
 all: test
 
-test:
+.PHONY: test
+test: build
 	go test ./...
 
 terraform-create:
