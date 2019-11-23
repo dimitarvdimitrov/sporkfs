@@ -25,8 +25,7 @@ func (s *E2eSuite) TestCreateEmptyFile() {
 		s.NoError(os.Remove(tmpFile.Name()))
 	}()
 
-	_, err = os.Stat(tmpFile.Name())
-	s.NoError(err)
+	s.FileExists(tmpFile.Name())
 }
 
 func (s *E2eSuite) TestCreateFileAndWrite() {
@@ -54,8 +53,7 @@ func (s *E2eSuite) TestCreateEmptyDir() {
 		s.NoError(os.RemoveAll(tmpDir))
 	}()
 
-	_, err = os.Stat(tmpDir)
-	s.NoError(err)
+	s.DirExists(tmpDir)
 }
 
 func (s *E2eSuite) TestCreateDirWithFiles() {
@@ -71,13 +69,101 @@ func (s *E2eSuite) TestCreateDirWithFiles() {
 		s.NoError(tmpFile.Close())
 	}()
 
-	_, err = os.Stat(tmpFile.Name())
+	s.FileExists(tmpFile.Name())
+
+	filesInDir, err := ioutil.ReadDir(tmpDir)
+	s.NoError(err)
+	s.Len(filesInDir, 1)
+	s.Equal(filesInDir[0].Name(), path.Base(tmpFile.Name()))
+}
+
+func (s *E2eSuite) TestRenameFile() {
+	tmpFile, err := ioutil.TempFile(s.mountDir, "name-1")
+	s.NoError(err)
+	s.NoError(tmpFile.Close())
+
+	oldName := tmpFile.Name()
+	newName := path.Dir(tmpFile.Name()) + "/name-2"
+	s.NoError(os.Rename(oldName, newName))
+	defer func() {
+		s.NoError(os.Remove(newName))
+	}()
+
+	s.FileExists(newName)
+
+	_, err = os.Stat(oldName)
+	s.Error(err)
+}
+
+func (s *E2eSuite) TestMoveFile() {
+	// setup
+	firstParent, err := ioutil.TempDir(s.mountDir, "")
+	s.NoError(err)
+	defer func() {
+		s.NoError(os.RemoveAll(firstParent))
+	}()
+
+	secondParent, err := ioutil.TempDir(s.mountDir, "")
+	s.NoError(err)
+	defer func() {
+		s.NoError(os.RemoveAll(secondParent))
+	}()
+
+	tmpFile, err := ioutil.TempFile(firstParent, "")
+	s.NoError(err)
+	s.NoError(tmpFile.Close())
+
+	oldName := tmpFile.Name()
+	newBaseName := "another-name"
+	newName := secondParent + "/" + newBaseName
+
+	// actual testing
+	err = os.Rename(oldName, newName)
 	s.NoError(err)
 
-	filesFound, err := ioutil.ReadDir(tmpDir)
+	// test new one appears
+	s.FileExists(newName)
+
+	// test old one is gone
+	_, err = os.Stat(oldName)
+	s.Error(err)
+
+	// test second parent dir has a child file
+	files, err := ioutil.ReadDir(secondParent)
 	s.NoError(err)
-	s.Len(filesFound, 1)
-	s.Equal(filesFound[0].Name(), path.Base(tmpFile.Name()))
+	s.Len(files, 1)
+	s.Equal(newBaseName, files[0].Name())
+}
+
+func (s *E2eSuite) TestRenameDir() {
+	// setup
+	testDir, err := ioutil.TempDir(s.mountDir, "")
+	s.NoError(err)
+
+	tmpFile, err := ioutil.TempFile(testDir, "")
+	s.NoError(err)
+	s.NoError(tmpFile.Close())
+
+	oldName := testDir
+	newBaseName := "same-dir-new-name"
+	newName := path.Dir(testDir) + "/" + newBaseName
+
+	// actual testing
+	err = os.Rename(oldName, newName)
+	s.NoError(err)
+	defer func() {
+		s.NoError(os.RemoveAll(newName))
+	}()
+
+	// test new one appears
+	s.DirExists(newName)
+
+	// test old one is gone
+	_, err = os.Stat(oldName)
+	s.Error(err)
+
+	// test second parent dir has a child file
+	s.FileExists(newName + "/" + path.Base(tmpFile.Name()))
 }
 
 func (s *E2eSuite) SetupSuite() {
