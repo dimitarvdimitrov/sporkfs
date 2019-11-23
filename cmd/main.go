@@ -5,6 +5,8 @@ import (
 
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
+	"github.com/dimitarvdimitrov/sporkfs/spork"
+
 	"github.com/seaweedfs/fuse"
 	"github.com/seaweedfs/fuse/fs"
 )
@@ -14,6 +16,7 @@ func main() {
 
 	flag.Parse()
 	mountpoint := flag.Arg(0)
+	dataDir := flag.Arg(1)
 	log.Infof("trying to mount sporkfs at %s...", mountpoint)
 
 	c, err := fuse.Mount(mountpoint,
@@ -27,7 +30,9 @@ func main() {
 	defer c.Close()
 
 	log.Infof("starting sporkfs...")
-	vfs := sfuse.Fs{}
+	vfs := sfuse.Fs{
+		S: spork.New(newSporkConfig(dataDir)),
+	}
 	defer vfs.Destroy()
 
 	err = fs.Serve(c, vfs)

@@ -9,14 +9,16 @@ import (
 	"github.com/seaweedfs/fuse/fs"
 )
 
-type Fs struct{}
+type Fs struct {
+	S spork.Spork
+}
 
 func (f Fs) Root() (fs.Node, error) {
-	return newNode(spork.S.Root()), nil
+	return newNode(f.S.Root(), &f.S), nil
 }
 
 func (f Fs) Destroy() {
-	spork.S.Close()
+	f.S.Close()
 }
 
 func parseError(err error) error {

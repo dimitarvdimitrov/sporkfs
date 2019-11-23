@@ -8,14 +8,16 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 )
 
-var S = Spork{
-	inventory: inventory.NewDriver("/opt/storage/inventory"),
-	data:      data.NewLocalDriver("/opt/storage/data"),
-}
-
 type Spork struct {
 	inventory   inventory.Driver
 	data, cache data.Driver
+}
+
+func New(c Config) Spork {
+	return Spork{
+		inventory: inventory.NewDriver(c.InventoryLocation),
+		data:      data.NewLocalDriver(c.DataLocation),
+	}
 }
 
 func (s Spork) Root() *store.File {

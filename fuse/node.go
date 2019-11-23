@@ -17,10 +17,10 @@ type node struct {
 	spork *spork.Spork
 }
 
-func newNode(f *store.File) node {
+func newNode(f *store.File, s *spork.Spork) node {
 	return node{
 		File:  f,
-		spork: &spork.S,
+		spork: s,
 	}
 }
 
@@ -40,7 +40,7 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	if err != nil {
 		return nil, parseError(err)
 	}
-	return newNode(file), nil
+	return newNode(file, n.spork), nil
 }
 
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
@@ -52,7 +52,7 @@ func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	if err != nil {
 		return nil, nil, err
 	}
-	node := newNode(f)
+	node := newNode(f, n.spork)
 	return node, handle(node), nil
 }
 
@@ -61,7 +61,7 @@ func (n node) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	if err != nil {
 		return nil, err
 	}
-	return newNode(newFile), nil
+	return newNode(newFile, n.spork), nil
 }
 
 func (n node) create(ctx context.Context, name string, mode os.FileMode) (*store.File, error) {
