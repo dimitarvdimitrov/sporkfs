@@ -74,7 +74,7 @@ func restoreInventory(location string) *store.File {
 		return &store.File{
 			RWMutex:  &sync.RWMutex{},
 			Id:       0,
-			Mode:     store.ModeDirectory,
+			Mode:     store.ModeDirectory | 0777,
 			Size:     1,
 			Hash:     0,
 			Children: nil,

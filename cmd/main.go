@@ -13,6 +13,8 @@ import (
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
+	"github.com/dimitarvdimitrov/sporkfs/store/data"
+	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 	"github.com/seaweedfs/fuse"
 	"github.com/seaweedfs/fuse/fs"
 	"google.golang.org/grpc"
@@ -27,13 +29,18 @@ func main() {
 	dataDir := flag.Arg(1)
 
 	done := make(chan struct{}, 2)
-	sporkService := spork.New(newSporkConfig(dataDir))
+	cfg := newSporkConfig(dataDir)
+
+	dataStorage := data.NewLocalDriver(cfg.DataLocation)
+	inv := inventory.NewDriver(cfg.InventoryLocation)
+
+	sporkService := spork.New(dataStorage, nil, inv)
 	vfs := sfuse.Fs{S: sporkService}
 
 	startFuseServer(mountpoint, vfs, done)
 	defer vfs.Destroy()
 
-	grpcServer := startSporkServer("localhost:8080", sporkService, done)
+	grpcServer := startSporkServer("localhost:8080", dataStorage, done)
 	defer grpcServer.GracefulStop()
 
 	unmountOnOsSignals(mountpoint, done)
@@ -81,7 +88,7 @@ func startFuseServer(mountpoint string, vfs sfuse.Fs, done chan struct{}) {
 	}()
 }
 
-func startSporkServer(listenAddr string, s spork.Spork, done chan struct{}) *grpc.Server {
+func startSporkServer(listenAddr string, s data.Driver, done chan struct{}) *grpc.Server {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)

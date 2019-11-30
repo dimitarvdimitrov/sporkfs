@@ -13,10 +13,10 @@ type Spork struct {
 	data, cache data.Driver
 }
 
-func New(c Config) Spork {
+func New(data, cache data.Driver, inv inventory.Driver) Spork {
 	return Spork{
-		inventory: inventory.NewDriver(c.InventoryLocation),
-		data:      data.NewLocalDriver(c.DataLocation),
+		inventory: inv,
+		data:      data,
 	}
 }
 

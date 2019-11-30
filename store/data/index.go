@@ -17,7 +17,7 @@ func restoreIndex(location string) index {
 	index := make(index)
 	f, err := os.Open(location + "/index")
 	if err != nil {
-		log.Errorf("couldn't load persisted index, starting fresh: %w", err)
+		log.Errorf("couldn't load persisted index, starting fresh: %s", err)
 		return map[uint64]map[uint64]string{}
 	}
 	defer f.Close()
@@ -25,7 +25,7 @@ func restoreIndex(location string) index {
 	d := json.NewDecoder(f)
 	err = d.Decode(&index)
 	if err != nil {
-		log.Errorf("couldn't load persisted index, starting fresh: %w", err)
+		log.Errorf("couldn't load persisted index, starting fresh: %s", err)
 		return map[uint64]map[uint64]string{}
 	}
 	return index

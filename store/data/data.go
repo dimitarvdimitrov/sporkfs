@@ -90,7 +90,11 @@ func (d localDriver) PruneVersionsExcept(id, version uint64) {
 }
 
 func (d localDriver) Remove(id, version uint64) {
-	removeFromDisk(d.storageRoot + d.index[id][version])
+	path, ok := d.index[id][version]
+	if !ok {
+		return
+	}
+	removeFromDisk(d.storageRoot + path)
 	delete(d.index[id], version)
 }
 
@@ -224,7 +228,7 @@ func (d localDriver) Sync() {
 func (d localDriver) persistIndex() {
 	f, err := os.Create(d.storageRoot + "/index")
 	if err != nil {
-		log.Errorf("couldn't persist index at %s: %w", d.storageRoot, err)
+		log.Errorf("couldn't persist index at %s: %s", d.storageRoot, err)
 	}
 	defer f.Close()
 

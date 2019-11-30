@@ -5,7 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -13,8 +15,8 @@ import (
 type E2eSuite struct {
 	suite.Suite
 
-	mountDir, dataDir string
-	sporkProcess      *exec.Cmd
+	mountDir, dataDir, sporkLogsFile string
+	sporkProcess                     *exec.Cmd
 }
 
 func (s *E2eSuite) TestCreateEmptyFile() {
@@ -163,22 +165,42 @@ func (s *E2eSuite) TestRenameDir() {
 
 func (s *E2eSuite) SetupSuite() {
 	var err error
-	s.dataDir, err = ioutil.TempDir("", "spork-test")
+	s.dataDir, err = ioutil.TempDir("", "spork-data-")
 	s.Require().NoError(err)
 
-	s.mountDir, err = ioutil.TempDir("/mnt", "spork")
+	err = os.Mkdir(s.dataDir+"/data", 0777)
+	s.Require().NoError(err)
+
+	s.mountDir, err = ioutil.TempDir("", "spork-mount-")
 	s.Require().NoError(err)
 
 	s.sporkProcess = exec.Command("../bin/sporkfs", s.mountDir, s.dataDir)
+
+	output, err := ioutil.TempFile("/tmp", "logs-*")
+	s.Require().NoError(err)
+	s.sporkProcess.Stderr = output
+	s.sporkProcess.Stdout = output
+	s.sporkLogsFile = output.Name()
 	s.Require().NoError(s.sporkProcess.Start())
+	time.Sleep(time.Second)
 }
 
 func (s *E2eSuite) TearDownSuite() {
-	_ = s.sporkProcess.Process.Kill()
-	_, _ = s.sporkProcess.Process.Wait()
+	s.NoError(exec.Command("fusermount", "-u", s.mountDir).Run())
+
+	state, err := s.sporkProcess.Process.Wait()
+	s.NoError(err)
+	s.True(state.Success())
+
+	outBytes, err := ioutil.ReadFile(s.sporkLogsFile)
+	out := string(outBytes)
+	s.NoError(err)
+	s.T().Log(out)
+	s.True(strings.Count(out, "\n") > 100) // to make sure it actually ran
 
 	s.NoError(os.RemoveAll(s.dataDir))
 	s.NoError(os.RemoveAll(s.mountDir))
+	s.NoError(os.Remove(s.sporkLogsFile))
 }
 
 func TestE2e(t *testing.T) {
