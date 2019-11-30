@@ -45,20 +45,30 @@ func (s Spork) ReadAll(f *store.File) ([]byte, error) {
 }
 
 func (s Spork) Read(f *store.File, offset, size int64) ([]byte, error) {
+	return s.ReadVersion(f, f.Hash, offset, size)
+}
+
+func (s Spork) ReadVersion(f *store.File, version uint64, offset, size int64) ([]byte, error) {
 	f.RLock()
 	defer f.RUnlock()
 
-	return s.data.Read(f, offset, size)
+	return s.data.Read(f.Id, version, offset, size)
 }
 
 func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, error) {
 	f.Lock()
 	defer f.Unlock()
 	defer func() {
-		f.Size = s.data.Size(f)
+		f.Size = s.data.Size(f.Id, f.Hash)
 	}()
 
-	return s.data.Write(f, offset, data, flags)
+	written, newHash, err := s.data.Write(f.Id, f.Hash, offset, data, flags)
+	if err != nil {
+		return written, err
+	}
+	f.Hash = newHash
+
+	return written, nil
 }
 
 func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) (*store.File, error) {
@@ -74,13 +84,16 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 		return nil, err
 	}
 
-	err = s.data.Add(f)
+	hash, err := s.data.Add(f.Id, f.Mode)
 	if err != nil {
 		s.inventory.Remove(f.Id)
 		return nil, err
 	}
+	f.Hash = hash
 
 	parent.Children = append(parent.Children, f)
+	parent.Size = int64(len(parent.Children))
+
 	return f, nil
 }
 
@@ -135,9 +148,10 @@ func (s Spork) Delete(file, parent *store.File) error {
 	found := false
 	for i, c := range parent.Children {
 		if c.Id == file.Id {
-			s.data.Remove(file.Id)
+			s.data.Remove(file.Id, file.Hash)
 			s.inventory.Remove(file.Id)
 			parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
+			parent.Size--
 
 			found = true
 			break

@@ -2,27 +2,23 @@ package api
 
 import (
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
-	"github.com/dimitarvdimitrov/sporkfs/spork"
+	"github.com/dimitarvdimitrov/sporkfs/store/data"
 )
 
 type fileServer struct {
-	s spork.Spork
+	data data.Driver
 }
 
-func NewFileServer(s spork.Spork) *fileServer {
+func NewFileServer(s data.Driver) *fileServer {
 	return &fileServer{
-		s: s,
+		data: s,
 	}
 }
 
 func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadServer) error {
 	ctx := stream.Context()
-	f, err := server.s.Get(req.Id)
-	if err != nil {
-		return err
-	}
 
-	bytes, err := server.s.Read(f, req.Offset, req.Size)
+	bytes, err := server.data.Read(req.Id, req.Version, req.Offset, req.Size)
 	if err != nil {
 		return err
 	}

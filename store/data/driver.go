@@ -4,10 +4,11 @@ import "github.com/dimitarvdimitrov/sporkfs/store"
 
 // TODO maybe get rid of the interface and have only the struct?
 type Driver interface {
-	Add(file *store.File) error
-	Remove(id uint64)
-	Read(file *store.File, offset, size int64) ([]byte, error)
-	Write(file *store.File, offset int64, data []byte, flags int) (int, error)
+	Add(id uint64, mode store.FileMode) (version uint64, err error)
+	PruneVersionsExcept(id, version uint64)
+	Read(id, version uint64, offset, size int64) ([]byte, error)
+	Remove(id, version uint64)
+	Size(id, version uint64) int64
 	Sync()
-	Size(f *store.File) int64
+	Write(id, version uint64, offset int64, data []byte, flags int) (bytesWritten int, newversion uint64, err error)
 }

@@ -1,84 +1,119 @@
 package data
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
+	"github.com/minio/highwayhash"
+)
+
+var (
+	hashKey, _ = hex.DecodeString("474c383279736a66674e48325037694c524e7a3830746e714636766f71675553")
 )
 
 type localDriver struct {
-	location string
-	index    map[uint64]string // maps file ids to location on the local file system
+	storageRoot string
+	index       index
 }
 
 func NewLocalDriver(location string) localDriver {
 	return localDriver{
-		location: location + "/",
-		index:    restoreIndex(location),
+		storageRoot: location + "/",
+		index:       restoreIndex(location),
 	}
 }
 
-func restoreIndex(location string) map[uint64]string {
-	log.Debugf("restoring file index from %s", location)
-	index := map[uint64]string{}
-	f, err := os.Open(location + "/index")
+func (d localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
+	if _, ok := d.index[id]; ok {
+		return 0, store.ErrFileAlreadyExists
+	}
+
+	if mode&store.ModeDirectory != 0 {
+		return 0, nil // noop if it's a dir
+	}
+
+	filePath := newFilePath(id)
+
+	f, err := os.OpenFile(d.storageRoot+filePath, os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
-		log.Fatal("couldn't load persisted index, starting fresh: %w", err)
-		return nil
+		return 0, err
 	}
 	defer f.Close()
 
-	d := json.NewDecoder(f)
-	err = d.Decode(&index)
+	hash := hashHandle(f)
+	d.index[id] = map[uint64]string{hash: filePath}
+
+	return hash, nil
+}
+
+func hashPath(path string) uint64 {
+	file, err := os.Open(path)
 	if err != nil {
-		log.Errorf("couldn't load persisted index, starting fresh: %w", err)
-		return map[uint64]string{}
+		log.Errorf("couldn't open file to hash: %s", err)
+		return 0
 	}
-	return index
+	defer file.Close()
+	return hashHandle(file)
 }
 
-func (d localDriver) Add(file *store.File) error {
-	if _, ok := d.index[file.Id]; ok {
-		return store.ErrFileAlreadyExists
-	}
-
-	if file.Mode&store.ModeDirectory != 0 {
-		return nil // noop if it's a dir
-	}
-
-	filePath := strconv.FormatUint(file.Id, 16)
-	d.index[file.Id] = filePath
-	f, err := os.OpenFile(d.location+filePath, os.O_CREATE|os.O_EXCL, file.Mode)
+func hashHandle(file *os.File) uint64 {
+	hash, err := highwayhash.New64(hashKey)
 	if err != nil {
-		return err
+		log.Errorf("couldn't start hashing file: %s", err)
+		return 0
 	}
-	defer f.Close()
-	return nil
+
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		log.Errorf("couldn't hash file: %s", err)
+	}
+	return hash.Sum64()
 }
 
-func (d localDriver) Remove(id uint64) {
-	log.Error(os.Remove(d.location + d.index[id]))
-	delete(d.index, id)
+func (d localDriver) PruneVersionsExcept(id, version uint64) {
+	versionToPrune := make([]uint64, 0, len(d.index[id]))
+	for v := range d.index[id] {
+		if v == version {
+			continue
+		}
+		versionToPrune = append(versionToPrune, v)
+	}
+
+	for _, v := range versionToPrune {
+		d.Remove(id, v)
+	}
 }
 
-func (d localDriver) Read(file *store.File, offset, size int64) ([]byte, error) {
-	location, exists := d.index[file.Id]
+func (d localDriver) Remove(id, version uint64) {
+	removeFromDisk(d.storageRoot + d.index[id][version])
+	delete(d.index[id], version)
+}
+
+func removeFromDisk(path string) {
+	err := os.Remove(path)
+	if err != nil {
+		log.Errorf("couldn't remove file: %s", err)
+	}
+}
+
+func (d localDriver) Read(id, version uint64, offset, size int64) ([]byte, error) {
+	location, exists := d.index[id][version]
 	if !exists {
 		return nil, fmt.Errorf("local disk: %w", store.ErrNoSuchFile)
 	}
-	f, err := os.Open(d.location + location)
+	f, err := os.Open(d.storageRoot + location)
 	if err != nil {
-		panic(fmt.Errorf("file id=%d was in index but not on disk: %w", file.Id, err))
+		panic(fmt.Errorf("file id=%d was in index but not on disk: %w", id, err))
 	}
 	defer f.Close()
 
-	data := make([]byte, min(size, file.Size-offset))
-	n, err := f.ReadAt(data, int64(offset))
+	data := make([]byte, size)
+	n, err := f.ReadAt(data, offset)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
@@ -92,22 +127,59 @@ func min(a, b int64) int64 {
 	return a
 }
 
-func (d localDriver) Write(f *store.File, offset int64, data []byte, flags int) (int, error) {
-	location, exists := d.index[f.Id]
+func (d localDriver) Write(id, hash uint64, offset int64, data []byte, flags int) (int, uint64, error) {
+	fileLocation, exists := d.index[id][hash]
 	if !exists {
-		return 0, store.ErrNoSuchFile
+		return 0, 0, store.ErrNoSuchFile
+	}
+
+	var written int
+	var err error
+
+	newFilename := fileLocation + "1"
+	err = duplicateFile(d.storageRoot+fileLocation, d.storageRoot+newFilename)
+	if err != nil {
+		return 0, 0, err
 	}
 
 	if flags&os.O_APPEND != 0 {
-		return write(d.location+location, data, flags)
+		written, err = write(d.storageRoot+newFilename, data, flags)
 	} else if offset > 0 {
-		return writeAt(d.location+location, offset, data, flags)
+		written, err = writeAt(d.storageRoot+newFilename, offset, data, flags)
 	} else {
 		if flags&os.O_TRUNC == 0 && flags&os.O_CREATE == 0 {
 			flags = flags | os.O_TRUNC
 		}
-		return write(d.location+location, data, flags)
+		written, err = write(d.storageRoot+newFilename, data, flags)
 	}
+
+	if err != nil {
+		return written, 0, err
+	}
+
+	newHash := hashPath(d.storageRoot + newFilename)
+	if newHash == hash {
+		removeFromDisk(d.storageRoot + newFilename)
+	} else {
+		d.index[id][newHash] = newFilename
+	}
+	return written, newHash, nil
+}
+
+func duplicateFile(oldPath, newPath string) error {
+	source, err := os.Open(oldPath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(newPath)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+	_, err = io.Copy(destination, source)
+	return err
 }
 
 func writeAt(path string, offset int64, data []byte, flags int) (int, error) {
@@ -130,8 +202,8 @@ func write(path string, data []byte, flags int) (int, error) {
 	return f.Write(data)
 }
 
-func (d localDriver) Size(f *store.File) int64 {
-	descriptor, err := os.Open(d.location + d.index[f.Id])
+func (d localDriver) Size(fId, version uint64) int64 {
+	descriptor, err := os.Open(d.storageRoot + d.index[fId][version])
 	if err != nil {
 		return 0
 	}
@@ -150,14 +222,14 @@ func (d localDriver) Sync() {
 }
 
 func (d localDriver) persistIndex() {
-	f, err := os.Create(d.location + "/index")
+	f, err := os.Create(d.storageRoot + "/index")
 	if err != nil {
-		log.Errorf("couldn't persist index at %s: %w", d.location, err)
+		log.Errorf("couldn't persist index at %s: %w", d.storageRoot, err)
 	}
 	defer f.Close()
 
 	err = json.NewEncoder(f).Encode(d.index)
 	if err != nil {
-		log.Errorf("persisting storage index at %s: %w", d.location, err)
+		log.Errorf("persisting storage index at %s: %w", d.storageRoot, err)
 	}
 }

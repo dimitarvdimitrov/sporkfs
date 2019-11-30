@@ -28,7 +28,6 @@ func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Inode = n.Id
 	attr.Mode = n.Mode
 	attr.Size = uint64(n.Size)
-	attr.Mode = n.Mode
 
 	return nil
 }
