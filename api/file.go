@@ -5,6 +5,10 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 )
 
+// ChunkSize is the size of the chunk of file
+// that is sent over in stream messages of File.Read()
+const ChunkSize = 1 << 16
+
 type fileServer struct {
 	data data.Driver
 }
@@ -30,7 +34,7 @@ func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadSer
 		default:
 		}
 
-		lenToSend := min(len(bytes), 4096)
+		lenToSend := min(len(bytes), ChunkSize)
 		toSend := bytes[:lenToSend]
 		msg := &proto.ReadReply{
 			Content: toSend,

@@ -5,9 +5,9 @@ var (
 	maxId    = uint64(minusOne)
 )
 
-func GetLocation(peerList []string, id uint64) int {
+func FindPeer(peerList []string, fileId uint64) string {
 	numPeers := uint64(len(peerList))
 	perBucket := maxId / numPeers
-
-	return int((id / perBucket) % numPeers)
+	peerIdx := (fileId / perBucket) % numPeers
+	return peerList[peerIdx]
 }

@@ -54,8 +54,12 @@ func (d localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 func hashPath(path string) uint64 {
 	file, err := os.Open(path)
 	if err != nil {
-		log.Errorf("couldn't open file to hash: %s", err)
-		return 0
+		// retry
+		file, err = os.Open(path)
+		if err != nil {
+			log.Errorf("couldn't open file to hash: %s", err)
+			return 0
+		}
 	}
 	defer file.Close()
 	return hashHandle(file)
@@ -64,38 +68,46 @@ func hashPath(path string) uint64 {
 func hashHandle(file *os.File) uint64 {
 	hash, err := highwayhash.New64(hashKey)
 	if err != nil {
-		log.Errorf("couldn't start hashing file: %s", err)
-		return 0
+		// retry
+		hash, err = highwayhash.New64(hashKey)
+		if err != nil {
+			log.Errorf("couldn't start hashing file: %s", err)
+			return 0
+		}
 	}
 
 	_, err = io.Copy(hash, file)
 	if err != nil {
-		log.Errorf("couldn't hash file: %s", err)
+		// retry
+		_, err = io.Copy(hash, file)
+		if err != nil {
+			log.Errorf("couldn't hash file: %s", err)
+		}
 	}
 	return hash.Sum64()
 }
 
-func (d localDriver) PruneVersionsExcept(id, version uint64) {
-	versionToPrune := make([]uint64, 0, len(d.index[id]))
+func (d localDriver) PruneVersionsExcept(id, hash uint64) {
+	hashToPrune := make([]uint64, 0, len(d.index[id]))
 	for v := range d.index[id] {
-		if v == version {
+		if v == hash {
 			continue
 		}
-		versionToPrune = append(versionToPrune, v)
+		hashToPrune = append(hashToPrune, v)
 	}
 
-	for _, v := range versionToPrune {
+	for _, v := range hashToPrune {
 		d.Remove(id, v)
 	}
 }
 
-func (d localDriver) Remove(id, version uint64) {
-	path, ok := d.index[id][version]
+func (d localDriver) Remove(id, hash uint64) {
+	path, ok := d.index[id][hash]
 	if !ok {
 		return
 	}
 	removeFromDisk(d.storageRoot + path)
-	delete(d.index[id], version)
+	delete(d.index[id], hash)
 }
 
 func removeFromDisk(path string) {
@@ -105,8 +117,8 @@ func removeFromDisk(path string) {
 	}
 }
 
-func (d localDriver) Read(id, version uint64, offset, size int64) ([]byte, error) {
-	location, exists := d.index[id][version]
+func (d localDriver) Read(id, hash uint64, offset, size int64) ([]byte, error) {
+	location, exists := d.index[id][hash]
 	if !exists {
 		return nil, fmt.Errorf("local disk: %w", store.ErrNoSuchFile)
 	}
@@ -122,13 +134,6 @@ func (d localDriver) Read(id, version uint64, offset, size int64) ([]byte, error
 		return nil, err
 	}
 	return data[:n], nil
-}
-
-func min(a, b int64) int64 {
-	if a > b {
-		return b
-	}
-	return a
 }
 
 func (d localDriver) Write(id, hash uint64, offset int64, data []byte, flags int) (int, uint64, error) {
@@ -206,8 +211,8 @@ func write(path string, data []byte, flags int) (int, error) {
 	return f.Write(data)
 }
 
-func (d localDriver) Size(fId, version uint64) int64 {
-	descriptor, err := os.Open(d.storageRoot + d.index[fId][version])
+func (d localDriver) Size(id, hash uint64) int64 {
+	descriptor, err := os.Open(d.storageRoot + d.index[id][hash])
 	if err != nil {
 		return 0
 	}

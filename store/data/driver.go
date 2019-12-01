@@ -10,5 +10,5 @@ type Driver interface {
 	Remove(id, version uint64)
 	Size(id, version uint64) int64
 	Sync()
-	Write(id, version uint64, offset int64, data []byte, flags int) (bytesWritten int, newversion uint64, err error)
+	Write(id, version uint64, offset int64, data []byte, flags int) (bytesWritten int, newVersion uint64, err error)
 }
