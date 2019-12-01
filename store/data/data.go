@@ -87,6 +87,11 @@ func hashHandle(file *os.File) uint64 {
 	return hash.Sum64()
 }
 
+func (d localDriver) Contains(id, hash uint64) bool {
+	_, exists := d.index[id][hash]
+	return exists
+}
+
 func (d localDriver) PruneVersionsExcept(id, hash uint64) {
 	hashToPrune := make([]uint64, 0, len(d.index[id]))
 	for v := range d.index[id] {
@@ -117,6 +122,10 @@ func removeFromDisk(path string) {
 	}
 }
 
+func (d localDriver) Reader(id, version uint64, offset, size int64) (io.ReadCloser, error) {
+	return nil, nil
+}
+
 func (d localDriver) Read(id, hash uint64, offset, size int64) ([]byte, error) {
 	location, exists := d.index[id][hash]
 	if !exists {
@@ -130,49 +139,61 @@ func (d localDriver) Read(id, hash uint64, offset, size int64) ([]byte, error) {
 
 	data := make([]byte, size)
 	n, err := f.ReadAt(data, offset)
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	return data[:n], nil
+	return data[:n], err
 }
 
-func (d localDriver) Write(id, hash uint64, offset int64, data []byte, flags int) (int, uint64, error) {
+func (d localDriver) Writer(id, hash uint64, offset int64, flags int) (io.WriteCloser, func() uint64, error) {
 	fileLocation, exists := d.index[id][hash]
 	if !exists {
-		return 0, 0, store.ErrNoSuchFile
+		return nil, nil, store.ErrNoSuchFile
 	}
 
-	var written int
-	var err error
-
 	newFilename := fileLocation + "1"
-	err = duplicateFile(d.storageRoot+fileLocation, d.storageRoot+newFilename)
+	newFilePath := d.storageRoot + newFilename
+	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
 	if err != nil {
-		return 0, 0, err
+		return nil, nil, err
+	}
+
+	if flags&os.O_TRUNC == 0 && flags&os.O_CREATE == 0 && flags&os.O_APPEND == 0 {
+		flags |= os.O_TRUNC
 	}
 
 	if flags&os.O_APPEND != 0 {
-		written, err = write(d.storageRoot+newFilename, data, flags)
-	} else if offset > 0 {
-		written, err = writeAt(d.storageRoot+newFilename, offset, data, flags)
-	} else {
-		if flags&os.O_TRUNC == 0 && flags&os.O_CREATE == 0 {
-			flags = flags | os.O_TRUNC
-		}
-		written, err = write(d.storageRoot+newFilename, data, flags)
+		flags ^= os.O_APPEND
 	}
 
+	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
 	if err != nil {
-		return written, 0, err
+		return nil, nil, err
 	}
 
-	newHash := hashPath(d.storageRoot + newFilename)
-	if newHash == hash {
-		removeFromDisk(d.storageRoot + newFilename)
-	} else {
-		d.index[id][newHash] = newFilename
+	var newHash uint64
+
+	onClose := func() {
+		_ = file.Sync()
+		_ = file.Close()
+
+		computedHash := hashPath(newFilePath)
+		if computedHash == hash {
+			removeFromDisk(newFilePath)
+		} else {
+			d.index[id][computedHash] = newFilename
+		}
+		newHash = computedHash
 	}
-	return written, newHash, nil
+
+	getHash := func() uint64 {
+		return newHash
+	}
+
+	segWriter := segmentedWriter{
+		offset:  offset,
+		f:       file,
+		onClose: onClose,
+	}
+
+	return segWriter, getHash, nil
 }
 
 func duplicateFile(oldPath, newPath string) error {
@@ -189,26 +210,6 @@ func duplicateFile(oldPath, newPath string) error {
 	defer destination.Close()
 	_, err = io.Copy(destination, source)
 	return err
-}
-
-func writeAt(path string, offset int64, data []byte, flags int) (int, error) {
-	f, err := os.OpenFile(path, flags, store.ModeRegularFile)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-
-	return f.WriteAt(data, offset)
-}
-
-func write(path string, data []byte, flags int) (int, error) {
-	f, err := os.OpenFile(path, flags, store.ModeRegularFile)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-
-	return f.Write(data)
 }
 
 func (d localDriver) Size(id, hash uint64) int64 {

@@ -1,8 +1,12 @@
 package spork
 
 import (
+	"bytes"
+	"io"
+	"sort"
 	"sync"
 
+	"github.com/dimitarvdimitrov/sporkfs/raft/index"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
@@ -11,12 +15,18 @@ import (
 type Spork struct {
 	inventory   inventory.Driver
 	data, cache data.Driver
+	fetcher     data.Readerer
+
+	cfg Config
 }
 
-func New(data, cache data.Driver, inv inventory.Driver) Spork {
+func New(data, cache data.Driver, inv inventory.Driver, cfg Config) Spork {
+	sort.Strings(cfg.Peers)
 	return Spork{
 		inventory: inv,
 		data:      data,
+		cache:     cache,
+		cfg:       cfg,
 	}
 }
 
@@ -37,13 +47,6 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 	return nil, store.ErrNoSuchFile
 }
 
-func (s Spork) ReadAll(f *store.File) ([]byte, error) {
-	f.RLock()
-	defer f.RUnlock()
-
-	return s.Read(f, 0, f.Size)
-}
-
 func (s Spork) Read(f *store.File, offset, size int64) ([]byte, error) {
 	return s.ReadVersion(f, f.Hash, offset, size)
 }
@@ -62,13 +65,22 @@ func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, 
 		f.Size = s.data.Size(f.Id, f.Hash)
 	}()
 
-	written, newHash, err := s.data.Write(f.Id, f.Hash, offset, data, flags)
+	writer, getNewHash, err := s.data.Writer(f.Id, f.Hash, offset, flags)
 	if err != nil {
-		return written, err
+		return 0, err
 	}
-	f.Hash = newHash
+	defer writer.Close()
 
-	return written, nil
+	wBuff := bytes.NewBuffer(data)
+	written, err := io.Copy(writer, wBuff)
+	if err != nil {
+		return int(written), err
+	}
+	_ = writer.Close() // we need Close() so that getNewHash is available
+
+	f.Hash = getNewHash()
+
+	return int(written), nil
 }
 
 func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) (*store.File, error) {
