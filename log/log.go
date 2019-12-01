@@ -58,6 +58,10 @@ func Warn(args ...interface{}) {
 	l.Warn(args...)
 }
 
+func Warnf(format string, args ...interface{}) {
+	l.Warnf(format, args...)
+}
+
 func Error(args ...interface{}) {
 	l.Error(args...)
 }

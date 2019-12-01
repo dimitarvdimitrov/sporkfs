@@ -27,20 +27,22 @@ func main() {
 	flag.Parse()
 	mountpoint := flag.Arg(0)
 	dataDir := flag.Arg(1)
+	thisPeer := flag.Arg(2)
 
 	done := make(chan struct{}, 2)
 	cfg := newSporkConfig(dataDir)
+	cfg.ThisPeer = thisPeer
 
 	dataStorage := data.NewLocalDriver(cfg.DataLocation)
 	inv := inventory.NewDriver(cfg.InventoryLocation)
 
-	sporkService := spork.New(dataStorage, nil, inv)
+	sporkService := spork.New(dataStorage, nil, inv, cfg)
 	vfs := sfuse.Fs{S: sporkService}
 
 	startFuseServer(mountpoint, vfs, done)
 	defer vfs.Destroy()
 
-	grpcServer := startSporkServer("localhost:8080", dataStorage, done)
+	grpcServer := startSporkServer(thisPeer, dataStorage, done)
 	defer grpcServer.GracefulStop()
 
 	unmountOnOsSignals(mountpoint, done)
@@ -111,5 +113,6 @@ func newSporkConfig(dir string) spork.Config {
 	return spork.Config{
 		InventoryLocation: fmt.Sprintf("%s/%s", dir, "inventory"),
 		DataLocation:      fmt.Sprintf("%s/%s", dir, "data"),
+		Peers:             []string{"localhost:8080", "localhost:8081"},
 	}
 }

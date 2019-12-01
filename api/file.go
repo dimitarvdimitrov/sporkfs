@@ -1,6 +1,8 @@
 package api
 
 import (
+	"io"
+
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 )
@@ -23,7 +25,7 @@ func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadSer
 	ctx := stream.Context()
 
 	bytes, err := server.data.Read(req.Id, req.Version, req.Offset, req.Size)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return err
 	}
 

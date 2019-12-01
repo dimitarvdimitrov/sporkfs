@@ -1,7 +1,7 @@
 package index
 
 const (
-	redundancy = 2
+	redundancy = 1
 )
 
 var (
