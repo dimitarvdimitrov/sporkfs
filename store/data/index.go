@@ -3,6 +3,7 @@ package data
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
@@ -33,15 +34,5 @@ func restoreIndex(location string) index {
 
 // newFilePath returns a supposedly unique file name based on crypto/rand and the file ID
 func newFilePath(id uint64) string {
-	//randomBytes := make([]byte, 8)
-	//var err error
-	//
-	//for retries := 0; (retries == 0) || (err != nil && retries < 10); retries++ {
-	//	_, err = rand.Read(randomBytes)
-	//}
-	//if err != nil {
-	//	panic("couldn't generate a random number")
-	//}
-
-	return fmt.Sprintf("%x", id)
+	return fmt.Sprintf("%x-%d", id, rand.Int())
 }

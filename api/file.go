@@ -1,8 +1,6 @@
 package api
 
 import (
-	"io"
-
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 )
@@ -22,30 +20,30 @@ func NewFileServer(s data.Driver) *fileServer {
 }
 
 func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadServer) error {
-	ctx := stream.Context()
+	//ctx := stream.Context()
 
-	bytes, err := server.data.Read(req.Id, req.Version, req.Offset, req.Size)
-	if err != nil && err != io.EOF {
-		return err
-	}
-
-	for len(bytes) > 0 {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		lenToSend := min(len(bytes), ChunkSize)
-		toSend := bytes[:lenToSend]
-		msg := &proto.ReadReply{
-			Content: toSend,
-		}
-		if err = stream.Send(msg); err != nil {
-			return err
-		}
-		bytes = bytes[lenToSend:]
-	}
+	//bytes, err := server.data.Read(req.Id, req.Version, req.Offset, req.Size)
+	//if err != nil && err != io.EOF {
+	//	return err
+	//}
+	//
+	//for len(bytes) > 0 {
+	//	select {
+	//	case <-ctx.Done():
+	//		return ctx.Err()
+	//	default:
+	//	}
+	//
+	//	lenToSend := min(len(bytes), ChunkSize)
+	//	toSend := bytes[:lenToSend]
+	//	msg := &proto.ReadReply{
+	//		Content: toSend,
+	//	}
+	//	if err = stream.Send(msg); err != nil {
+	//		return err
+	//	}
+	//	bytes = bytes[lenToSend:]
+	//}
 	return nil
 }
 

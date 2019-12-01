@@ -18,7 +18,7 @@ type segmentedWriter struct {
 	once    sync.Once
 }
 
-func (wc segmentedWriter) Write(p []byte) (int, error) {
+func (wc *segmentedWriter) Write(p []byte) (int, error) {
 	var n int
 	var err error
 
@@ -33,7 +33,7 @@ func (wc segmentedWriter) Write(p []byte) (int, error) {
 }
 
 // Close can be called multiple times. Any call after the first is a noop
-func (wc segmentedWriter) Close() error {
+func (wc *segmentedWriter) Close() error {
 	wc.once.Do(wc.onClose)
 	return nil
 }

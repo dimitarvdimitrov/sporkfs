@@ -122,24 +122,26 @@ func removeFromDisk(path string) {
 	}
 }
 
-func (d localDriver) Reader(id, version uint64, offset, size int64) (io.ReadCloser, error) {
-	return nil, nil
-}
-
-func (d localDriver) Read(id, hash uint64, offset, size int64) ([]byte, error) {
+func (d localDriver) Reader(id, hash uint64, offset, size int64) (io.ReadCloser, error) {
 	location, exists := d.index[id][hash]
 	if !exists {
 		return nil, fmt.Errorf("local disk: %w", store.ErrNoSuchFile)
 	}
 	f, err := os.Open(d.storageRoot + location)
 	if err != nil {
-		panic(fmt.Errorf("file id=%d was in index but not on disk: %w", id, err))
+		return nil, fmt.Errorf("file id=%d was in index but not on disk: %w", id, err)
 	}
-	defer f.Close()
 
-	data := make([]byte, size)
-	n, err := f.ReadAt(data, offset)
-	return data[:n], err
+	segReader := &segmentedReader{
+		offset: offset,
+		size:   size,
+		f:      f,
+		onClose: func() {
+			_ = f.Close()
+		},
+	}
+
+	return segReader, nil
 }
 
 func (d localDriver) Writer(id, hash uint64, offset int64, flags int) (io.WriteCloser, func() uint64, error) {
@@ -148,7 +150,7 @@ func (d localDriver) Writer(id, hash uint64, offset int64, flags int) (io.WriteC
 		return nil, nil, store.ErrNoSuchFile
 	}
 
-	newFilename := fileLocation + "1"
+	newFilename := newFilePath(id)
 	newFilePath := d.storageRoot + newFilename
 	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
 	if err != nil {
@@ -187,7 +189,7 @@ func (d localDriver) Writer(id, hash uint64, offset int64, flags int) (io.WriteC
 		return newHash
 	}
 
-	segWriter := segmentedWriter{
+	segWriter := &segmentedWriter{
 		offset:  offset,
 		f:       file,
 		onClose: onClose,

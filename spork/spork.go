@@ -55,7 +55,33 @@ func (s Spork) ReadVersion(f *store.File, version uint64, offset, size int64) ([
 	f.RLock()
 	defer f.RUnlock()
 
-	return s.data.Read(f.Id, version, offset, size)
+	var driver = s.data
+	if false {
+		driver = s.cache
+		if !driver.Contains(f.Id, version) {
+			s.fetcher.Reader(f.Id, version, offset, size)
+		}
+	}
+
+	result := make([]byte, 0, size)
+	var rBuff = bytes.NewBuffer(result)
+	content, err := driver.Reader(f.Id, version, offset, size)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	n, err := rBuff.ReadFrom(content)
+
+	return result[:n], err
+}
+
+func (s Spork) fileShouldBeCached(id uint64) bool {
+	peersWithFile := index.FindPeers(s.cfg.Peers, id)
+	for _, p := range peersWithFile {
+		if p == s.cfg.ThisPeer {
+			return false
+		}
+	}
+	return true
 }
 
 func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, error) {
@@ -71,7 +97,7 @@ func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, 
 	}
 	defer writer.Close()
 
-	wBuff := bytes.NewBuffer(data)
+	var wBuff io.Reader = bytes.NewBuffer(data)
 	written, err := io.Copy(writer, wBuff)
 	if err != nil {
 		return int(written), err
