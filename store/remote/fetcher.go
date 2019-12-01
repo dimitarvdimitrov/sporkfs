@@ -6,12 +6,14 @@ import (
 
 	"github.com/dimitarvdimitrov/sporkfs/api"
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
+	"github.com/dimitarvdimitrov/sporkfs/log"
 	"google.golang.org/grpc"
 )
 
-const bufferSize = 5 * api.ChunkSize
+const grpcBufferSize = 5 * api.ChunkSize
 
 type Fetcher interface {
+	Reader(id, version uint64, offset, size int64) (io.ReadCloser, error)
 }
 
 type grpcFetcher struct {
@@ -21,7 +23,7 @@ type grpcFetcher struct {
 func NewGrpcFetcher(remoteUrl string) (*grpcFetcher, error) {
 	conn, err := grpc.Dial(remoteUrl,
 		grpc.WithInsecure(),
-		grpc.WithReadBufferSize(bufferSize),
+		grpc.WithReadBufferSize(grpcBufferSize),
 	)
 	if err != nil {
 		return nil, err
@@ -32,9 +34,8 @@ func NewGrpcFetcher(remoteUrl string) (*grpcFetcher, error) {
 	}, nil
 }
 
-func (f grpcFetcher) Fetch(id, version uint64, offset, size int64) ([]byte, error) {
+func (f grpcFetcher) Reader(id, version uint64, offset, size int64) (io.ReadCloser, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	req := &proto.ReadRequest{
 		Id:      id,
@@ -48,23 +49,60 @@ func (f grpcFetcher) Fetch(id, version uint64, offset, size int64) ([]byte, erro
 		return nil, err
 	}
 
-	received := make([]byte, size)
-	receivedLen := int64(0)
+	out, in := io.Pipe()
+	reader := grpcAsyncReader{
+		stream:      stream,
+		closeStream: cancel,
+		in:          in,
+		out:         out,
+		done:        make(chan struct{}),
+	}
+	go reader.run()
 
-	for receivedLen < size {
-		reply, err := stream.Recv()
+	return reader, nil
+}
+
+type grpcAsyncReader struct {
+	stream      proto.File_ReadClient
+	closeStream func()
+	done        chan struct{}
+	in          *io.PipeWriter
+	out         *io.PipeReader
+}
+
+func (r grpcAsyncReader) Read(p []byte) (n int, err error) {
+	return r.out.Read(p)
+}
+
+func (r grpcAsyncReader) Close() error {
+	close(r.done)
+	r.closeStream()
+	_ = r.in.Close()
+	_ = r.out.Close()
+	return nil
+}
+
+func (r grpcAsyncReader) run() {
+	for {
+		select {
+		case <-r.done:
+			break
+		default:
+		}
+
+		reply, err := r.stream.Recv()
 		if err != nil {
-			if err == io.EOF {
-				break
-			} else {
-				return nil, err
+			_ = r.in.CloseWithError(err)
+			if err != io.EOF {
+				log.Errorf("reading remote file: %s", err)
 			}
+			return
 		}
 
 		chunk := reply.GetContent()
-		copied := copy(received[receivedLen:], chunk)
-		receivedLen += int64(copied)
+		_, err = r.in.Write(chunk)
+		if err != nil {
+			log.Warnf("couldn't receive file chunk from remote peer: %s", err)
+		}
 	}
-
-	return received, nil
 }
