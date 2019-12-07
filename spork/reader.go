@@ -8,8 +8,13 @@ import (
 )
 
 type Reader interface {
-	io.ReadCloser
+	io.Reader
 	io.ReaderAt
+}
+
+type ReadCloser interface {
+	Reader
+	io.Closer
 }
 
 type reader struct {

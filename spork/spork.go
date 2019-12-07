@@ -41,11 +41,34 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 	return nil, store.ErrNoSuchFile
 }
 
-func (s Spork) Read(f *store.File, flags int) (Reader, error) {
+func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
+	r, w, err := s.data.Open(f.Id, f.Hash, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	rw := &readWriter{
+		r: &reader{
+			f: f,
+			r: r,
+		},
+		w: &writer{
+			f:         f,
+			fileSizer: s.data,
+			w:         w,
+		},
+	}
+	return rw, nil
+}
+
+func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 	return s.ReadVersion(f, f.Hash, flags)
 }
 
-func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (Reader, error) {
+func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (ReadCloser, error) {
+	f.RLock()
+	defer f.RUnlock()
+
 	r, err := s.data.Reader(f.Id, version, flags)
 	if err != nil {
 		return nil, err
@@ -67,7 +90,10 @@ func (s Spork) fileShouldBeCached(id uint64) bool {
 	return true
 }
 
-func (s Spork) Write(f *store.File, flags int) (Writer, error) {
+func (s Spork) Write(f *store.File, flags int) (WriteCloser, error) {
+	f.Lock()
+	defer f.Unlock()
+
 	w, err := s.data.Writer(f.Id, f.Hash, flags)
 	if err != nil {
 		return nil, err

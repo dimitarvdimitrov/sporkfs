@@ -105,6 +105,18 @@ func (h handle) flush() {
 }
 
 func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error) {
+	// TODO maybe as to go at some point
+	h.node.File.Lock()
+	defer h.node.File.Unlock()
+
+	if req.Dir {
+		return
+	}
+
+	if req.ReleaseFlags&fuse.ReleaseFlush != 0 {
+		h.flush()
+	}
+
 	fsyncReqM.Lock()
 	close(h.fsync)
 	delete(fsyncReq[h.node.File.Id], h.id)

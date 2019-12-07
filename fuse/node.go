@@ -66,14 +66,19 @@ func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 	return
 }
 
-func (n node) open(flags int) (r spork.Reader, w spork.Writer, err error) {
+func (n node) open(flags int) (r spork.ReadCloser, w spork.WriteCloser, err error) {
 	fuseFlags := fuse.OpenFlags(flags)
-	if fuseFlags.IsReadOnly() || fuseFlags.IsReadWrite() {
+
+	switch {
+	case fuseFlags.IsReadWrite():
+		rw, er := n.spork.ReadWriter(n.File, flags)
+		r, w, err = rw, rw, er
+	case fuseFlags.IsWriteOnly():
+		w, err = n.spork.Write(n.File, flags)
+	default:
 		r, err = n.spork.Read(n.File, flags)
 	}
-	if fuseFlags.IsWriteOnly() || fuseFlags.IsReadWrite() {
-		w, err = n.spork.Write(n.File, flags)
-	}
+
 	return
 }
 
@@ -84,8 +89,8 @@ func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	}
 	node := newNode(f, n.spork)
 
-	var reader spork.Reader
-	var writer spork.Writer
+	var reader spork.ReadCloser
+	var writer spork.WriteCloser
 
 	if node.Mode&store.ModeDirectory == 0 {
 		reader, writer, err = node.open(int(req.Flags))

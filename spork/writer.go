@@ -14,7 +14,12 @@ type sizer interface {
 type Writer interface {
 	data.Flusher
 	io.WriterAt
-	io.WriteCloser
+	io.Writer
+}
+
+type WriteCloser interface {
+	Writer
+	io.Closer
 }
 
 type writer struct {
@@ -43,7 +48,6 @@ func (w *writer) Write(p []byte) (int, error) {
 }
 
 func (w *writer) Close() error {
-	w.Flush()
 	w.f.Hash = w.w.Close()
 	w.f.Size = w.fileSizer.Size(w.f.Id, w.f.Hash)
 	return nil

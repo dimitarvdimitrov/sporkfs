@@ -32,7 +32,7 @@ func restoreIndex(location string) index {
 	return index
 }
 
-// newFilePath returns a supposedly unique file name based on crypto/rand and the file ID
-func newFilePath(id uint64) string {
+// newStorageLocation returns a supposedly unique file name based on crypto/rand and the file ID
+func newStorageLocation(id uint64) string {
 	return fmt.Sprintf("%d-%d", id, rand.Int())
 }

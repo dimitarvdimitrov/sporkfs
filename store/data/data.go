@@ -19,18 +19,19 @@ var (
 
 type localDriver struct {
 	storageRoot string
-	indexM      sync.RWMutex
+	indexM      *sync.RWMutex
 	index       index
 }
 
-func NewLocalDriver(location string) localDriver {
-	return localDriver{
+func NewLocalDriver(location string) *localDriver {
+	return &localDriver{
 		storageRoot: location + "/",
 		index:       restoreIndex(location),
+		indexM:      &sync.RWMutex{},
 	}
 }
 
-func (d localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
+func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 	d.indexM.Lock()
 	defer d.indexM.Unlock()
 
@@ -42,7 +43,7 @@ func (d localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 		return 0, nil // noop if it's a dir
 	}
 
-	filePath := newFilePath(id)
+	filePath := newStorageLocation(id)
 
 	f, err := os.OpenFile(d.storageRoot+filePath, os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
@@ -93,7 +94,7 @@ func hashHandle(file *os.File) uint64 {
 	return hash.Sum64()
 }
 
-func (d localDriver) Contains(id, hash uint64) bool {
+func (d *localDriver) Contains(id, hash uint64) bool {
 	d.indexM.RLock()
 	defer d.indexM.RUnlock()
 
@@ -102,7 +103,7 @@ func (d localDriver) Contains(id, hash uint64) bool {
 }
 
 // TODO remove
-func (d localDriver) PruneVersionsExcept(id, hash uint64) {
+func (d *localDriver) PruneVersionsExcept(id, hash uint64) {
 	hashToPrune := make([]uint64, 0, len(d.index[id]))
 	for v := range d.index[id] {
 		if v == hash {
@@ -116,7 +117,7 @@ func (d localDriver) PruneVersionsExcept(id, hash uint64) {
 	}
 }
 
-func (d localDriver) Remove(id, hash uint64) {
+func (d *localDriver) Remove(id, hash uint64) {
 	if !d.Contains(id, hash) {
 		return
 	}
@@ -136,7 +137,7 @@ func removeFromDisk(path string) {
 	}
 }
 
-func (d localDriver) Reader(id, hash uint64, flags int) (Reader, error) {
+func (d *localDriver) Reader(id, hash uint64, flags int) (Reader, error) {
 	d.indexM.RLock()
 	location, exists := d.index[id][hash]
 	d.indexM.RUnlock()
@@ -149,17 +150,55 @@ func (d localDriver) Reader(id, hash uint64, flags int) (Reader, error) {
 		return nil, fmt.Errorf("file id=%d was in index but not on disk: %w", id, err)
 	}
 
-	segReader := &segmentedReader{
+	return d.newSegReader(f), nil
+}
+
+func (d *localDriver) newSegReader(f *os.File) *segmentedReader {
+	return &segmentedReader{
 		f: f,
 		onClose: func() {
 			_ = f.Close()
 		},
 	}
-
-	return segReader, nil
 }
 
-func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
+func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
+	d.indexM.RLock()
+	fileLocation, exists := d.index[id][hash]
+	d.indexM.RUnlock()
+	if !exists {
+		return nil, nil, store.ErrNoSuchFile
+	}
+
+	newLocation := newStorageLocation(id)
+	newFilePath := d.storageRoot + newLocation
+	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
+		flags |= os.O_TRUNC
+	}
+
+	// TODO remove this - shouldnt be needed
+	if flags&os.O_CREATE != 0 { // we've already duplicated the file, it's already created
+		flags ^= os.O_CREATE
+	}
+	flags |= os.O_RDWR
+
+	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	writer := d.newSegWriter(id, hash, file, newLocation)
+	reader := d.newSegReader(file)
+
+	return reader, writer, nil
+}
+
+func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 	d.indexM.RLock()
 	fileLocation, exists := d.index[id][hash]
 	d.indexM.RUnlock()
@@ -167,8 +206,8 @@ func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 		return nil, store.ErrNoSuchFile
 	}
 
-	newFilename := newFilePath(id)
-	newFilePath := d.storageRoot + newFilename
+	newLocation := newStorageLocation(id)
+	newFilePath := d.storageRoot + newLocation
 	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
 	if err != nil {
 		return nil, err
@@ -178,6 +217,7 @@ func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 		flags |= os.O_TRUNC
 	}
 
+	// TODO remove this - shouldnt be needed
 	if flags&os.O_CREATE != 0 { // we've already duplicated the file, it's already created
 		flags ^= os.O_CREATE
 	}
@@ -187,19 +227,26 @@ func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 		return nil, err
 	}
 
+	segWriter := d.newSegWriter(id, hash, file, newLocation)
+
+	return segWriter, nil
+}
+
+func (d *localDriver) newSegWriter(id, oldHash uint64, file *os.File, storageLocation string) *segmentedWriter {
 	var newHash uint64
+	filePath := file.Name()
 
 	onClose := func() {
 		_ = file.Sync()
 		_ = file.Close()
 
-		newHash = hashPath(newFilePath)
-		if newHash == hash {
-			removeFromDisk(newFilePath)
+		newHash = hashPath(filePath)
+		if newHash == oldHash {
+			removeFromDisk(filePath)
 		} else {
 			d.indexM.Lock()
 			defer d.indexM.Unlock()
-			d.index[id][newHash] = newFilename
+			d.index[id][newHash] = storageLocation
 		}
 	}
 
@@ -207,14 +254,12 @@ func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 		return newHash
 	}
 
-	segWriter := &segmentedWriter{
+	return &segmentedWriter{
 		f:       file,
 		flush:   flusher(file),
 		onClose: onClose,
 		hash:    getHash,
 	}
-
-	return segWriter, nil
 }
 
 func flusher(f *os.File) func() {
@@ -239,7 +284,7 @@ func duplicateFile(oldPath, newPath string) error {
 	return err
 }
 
-func (d localDriver) Size(id, hash uint64) int64 {
+func (d *localDriver) Size(id, hash uint64) int64 {
 	d.indexM.RLock()
 	descriptor, err := os.Open(d.storageRoot + d.index[id][hash])
 	if err != nil {
@@ -256,18 +301,20 @@ func (d localDriver) Size(id, hash uint64) int64 {
 	return info.Size()
 }
 
-func (d localDriver) Sync() {
+func (d *localDriver) Sync() {
 	d.persistIndex()
 }
 
-func (d localDriver) persistIndex() {
+func (d *localDriver) persistIndex() {
 	f, err := os.Create(d.storageRoot + "/index")
 	if err != nil {
 		log.Errorf("couldn't persist index at %s: %s", d.storageRoot, err)
 	}
 	defer f.Close()
 
+	d.indexM.RLock()
 	err = json.NewEncoder(f).Encode(d.index)
+	d.indexM.RUnlock()
 	if err != nil {
 		log.Errorf("persisting storage index at %s: %w", d.storageRoot, err)
 	}
