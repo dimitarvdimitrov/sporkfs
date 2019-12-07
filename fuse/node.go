@@ -20,6 +20,7 @@ import (
 // There is a TODO in seaweedfs.fuse to move the interface.
 var fsyncReq = map[uint64]map[fuse.HandleID]chan struct{}{}
 var fsyncReqM = sync.Mutex{}
+var fsyncWg = sync.WaitGroup{}
 
 type node struct {
 	*store.File
@@ -142,10 +143,12 @@ func (n node) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	for _, handle := range chans {
 		select {
 		case handle <- struct{}{}:
+			fsyncWg.Add(1)
 		default:
 			// i.e. there's already a pending fsync
 		}
 	}
+	fsyncWg.Wait()
 
 	return nil
 }

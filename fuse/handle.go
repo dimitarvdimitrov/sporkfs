@@ -46,6 +46,7 @@ func newHandle(n node, r spork.ReadCloser, w spork.WriteCloser) handle {
 func (h handle) run() {
 	for range h.fsync {
 		h.flush()
+		fsyncWg.Done()
 	}
 }
 
