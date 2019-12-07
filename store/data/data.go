@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
@@ -18,6 +19,7 @@ var (
 
 type localDriver struct {
 	storageRoot string
+	indexM      sync.RWMutex
 	index       index
 }
 
@@ -29,6 +31,9 @@ func NewLocalDriver(location string) localDriver {
 }
 
 func (d localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
+	d.indexM.Lock()
+	defer d.indexM.Unlock()
+
 	if _, ok := d.index[id]; ok {
 		return 0, store.ErrFileAlreadyExists
 	}
@@ -44,6 +49,7 @@ func (d localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 		return 0, err
 	}
 	defer f.Close()
+	log.Debugf("created internal file %s for file id %d", filePath)
 
 	hash := hashHandle(f)
 	d.index[id] = map[uint64]string{hash: filePath}
@@ -88,10 +94,14 @@ func hashHandle(file *os.File) uint64 {
 }
 
 func (d localDriver) Contains(id, hash uint64) bool {
+	d.indexM.RLock()
+	defer d.indexM.RUnlock()
+
 	_, exists := d.index[id][hash]
 	return exists
 }
 
+// TODO remove
 func (d localDriver) PruneVersionsExcept(id, hash uint64) {
 	hashToPrune := make([]uint64, 0, len(d.index[id]))
 	for v := range d.index[id] {
@@ -107,12 +117,16 @@ func (d localDriver) PruneVersionsExcept(id, hash uint64) {
 }
 
 func (d localDriver) Remove(id, hash uint64) {
-	path, ok := d.index[id][hash]
-	if !ok {
+	if !d.Contains(id, hash) {
 		return
 	}
-	removeFromDisk(d.storageRoot + path)
+
+	d.indexM.Lock()
+	path := d.index[id][hash]
 	delete(d.index[id], hash)
+	d.indexM.Unlock()
+
+	removeFromDisk(d.storageRoot + path)
 }
 
 func removeFromDisk(path string) {
@@ -122,20 +136,21 @@ func removeFromDisk(path string) {
 	}
 }
 
-func (d localDriver) Reader(id, hash uint64, offset, size int64) (io.ReadCloser, error) {
+func (d localDriver) Reader(id, hash uint64, flags int) (Reader, error) {
+	d.indexM.RLock()
 	location, exists := d.index[id][hash]
+	d.indexM.RUnlock()
 	if !exists {
-		return nil, fmt.Errorf("local disk: %w", store.ErrNoSuchFile)
+		return nil, store.ErrNoSuchFile
 	}
-	f, err := os.Open(d.storageRoot + location)
+
+	f, err := os.OpenFile(d.storageRoot+location, flags, store.ModeRegularFile)
 	if err != nil {
 		return nil, fmt.Errorf("file id=%d was in index but not on disk: %w", id, err)
 	}
 
 	segReader := &segmentedReader{
-		offset: offset,
-		size:   size,
-		f:      f,
+		f: f,
 		onClose: func() {
 			_ = f.Close()
 		},
@@ -145,7 +160,9 @@ func (d localDriver) Reader(id, hash uint64, offset, size int64) (io.ReadCloser,
 }
 
 func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
+	d.indexM.RLock()
 	fileLocation, exists := d.index[id][hash]
+	d.indexM.RUnlock()
 	if !exists {
 		return nil, store.ErrNoSuchFile
 	}
@@ -157,12 +174,8 @@ func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 		return nil, err
 	}
 
-	if flags&os.O_TRUNC == 0 && flags&os.O_CREATE == 0 && flags&os.O_APPEND == 0 {
+	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
 		flags |= os.O_TRUNC
-	}
-
-	if flags&os.O_APPEND != 0 { // we will use the file for all purposes
-		flags ^= os.O_APPEND
 	}
 
 	if flags&os.O_CREATE != 0 { // we've already duplicated the file, it's already created
@@ -180,13 +193,14 @@ func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 		_ = file.Sync()
 		_ = file.Close()
 
-		computedHash := hashPath(newFilePath)
-		if computedHash == hash {
+		newHash = hashPath(newFilePath)
+		if newHash == hash {
 			removeFromDisk(newFilePath)
 		} else {
-			d.index[id][computedHash] = newFilename
+			d.indexM.Lock()
+			defer d.indexM.Unlock()
+			d.index[id][newHash] = newFilename
 		}
-		newHash = computedHash
 	}
 
 	getHash := func() uint64 {
@@ -226,10 +240,12 @@ func duplicateFile(oldPath, newPath string) error {
 }
 
 func (d localDriver) Size(id, hash uint64) int64 {
+	d.indexM.RLock()
 	descriptor, err := os.Open(d.storageRoot + d.index[id][hash])
 	if err != nil {
 		return 0
 	}
+	d.indexM.RUnlock()
 	defer descriptor.Close()
 
 	info, err := descriptor.Stat()
