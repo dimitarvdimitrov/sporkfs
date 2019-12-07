@@ -19,15 +19,11 @@ type segmentedWriter struct {
 }
 
 func (wc *segmentedWriter) WriteAt(p []byte, off int64) (int, error) {
-	return wc.write(p, off)
+	return wc.f.WriteAt(p, off)
 }
 
 func (wc *segmentedWriter) Write(p []byte) (int, error) {
-	return wc.write(p, 0)
-}
-
-func (wc *segmentedWriter) write(p []byte, off int64) (int, error) {
-	return wc.f.WriteAt(p, off)
+	return wc.f.Write(p)
 }
 
 // Close can be called multiple times. Any call after the first is a noop
@@ -37,6 +33,5 @@ func (wc *segmentedWriter) Close() uint64 {
 }
 
 func (wc *segmentedWriter) Flush() {
-	wc.onClose()
 	wc.flush()
 }

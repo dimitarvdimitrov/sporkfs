@@ -1,8 +1,6 @@
 package spork
 
 import (
-	"bytes"
-	"io"
 	"sort"
 	"sync"
 
@@ -43,31 +41,20 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 	return nil, store.ErrNoSuchFile
 }
 
-func (s Spork) Read(f *store.File, offset, size int64) ([]byte, error) {
-	return s.ReadVersion(f, f.Hash, offset, size)
+func (s Spork) Read(f *store.File, flags int) (Reader, error) {
+	return s.ReadVersion(f, f.Hash, flags)
 }
 
-func (s Spork) ReadVersion(f *store.File, version uint64, offset, size int64) ([]byte, error) {
-	f.RLock()
-	defer f.RUnlock()
-
-	var driver = s.data
-	if false {
-		driver = s.cache
-		if !driver.Contains(f.Id, version) {
-			s.fetcher.Reader(f.Id, version, offset, size)
-		}
-	}
-
-	result := make([]byte, 0, size)
-	var rBuff = bytes.NewBuffer(result)
-	content, err := driver.Reader(f.Id, version, offset, size)
-	if err != nil && err != io.EOF {
+func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (Reader, error) {
+	r, err := s.data.Reader(f.Id, version, flags)
+	if err != nil {
 		return nil, err
 	}
-	n, err := rBuff.ReadFrom(content)
 
-	return result[:n], err
+	return &reader{
+		f: f,
+		r: r,
+	}, nil
 }
 
 func (s Spork) fileShouldBeCached(id uint64) bool {

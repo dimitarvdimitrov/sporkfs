@@ -48,8 +48,9 @@ func (h handle) run() {
 }
 
 func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	data, err := h.spork.Read(h.File, req.Offset, int64(req.Size))
-	if err != nil {
+	data := make([]byte, req.Size)
+	_, err := h.r.ReadAt(data, req.Offset)
+	if err != nil && err != io.EOF {
 		return parseError(err)
 	}
 	resp.Data = data
@@ -62,7 +63,12 @@ func (h handle) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 }
 
 func (h handle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) (err error) {
-	resp.Size, err = h.w.WriteAt(req.Data, req.Offset)
+	if req.FileFlags&fuse.OpenAppend != 0 {
+		resp.Size, err = h.w.Write(req.Data)
+	} else {
+		resp.Size, err = h.w.WriteAt(req.Data, req.Offset)
+	}
+
 	return parseError(err)
 }
 

@@ -23,8 +23,7 @@ type Writerer interface {
 }
 
 type Readerer interface {
-	//Reader(id, version uint64, offset, size int64) (Reader, error)
-	Reader(id, hash uint64, offset, size int64) (io.ReadCloser, error)
+	Reader(id, version uint64, flags int) (Reader, error)
 }
 
 type Reader interface {

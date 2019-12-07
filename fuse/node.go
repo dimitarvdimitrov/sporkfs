@@ -49,25 +49,6 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	return newNode(file, n.spork), nil
 }
 
-type anonReader struct {
-	f *store.File
-	s *spork.Spork
-}
-
-func (a anonReader) Read(p []byte) (n int, err error) {
-	result, err := a.s.Read(a.f, 0, int64(len(p)))
-	return copy(p, result), err
-}
-
-func (a anonReader) Close() error {
-	return nil
-}
-
-func (a anonReader) ReadAt(p []byte, off int64) (n int, err error) {
-	result, err := a.s.Read(a.f, off, int64(len(p)))
-	return copy(p, result), err
-}
-
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (h fs.Handle, err error) {
 	if n.File.Mode&store.ModeDirectory != 0 {
 		h, resp.Handle = newHandle(n, nil, nil)
@@ -81,13 +62,15 @@ func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 	return
 }
 
-func (n node) open(flags int) (spork.Reader, spork.Writer, error) {
-	writer, err := n.spork.Write(n.File, flags)
-	reader := anonReader{
-		f: n.File,
-		s: n.spork,
+func (n node) open(flags int) (r spork.Reader, w spork.Writer, err error) {
+	fuseFlags := fuse.OpenFlags(flags)
+	if fuseFlags.IsReadOnly() || fuseFlags.IsReadWrite() {
+		r, err = n.spork.Read(n.File, flags)
 	}
-	return reader, writer, err
+	if fuseFlags.IsWriteOnly() || fuseFlags.IsReadWrite() {
+		w, err = n.spork.Write(n.File, flags)
+	}
+	return
 }
 
 func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
