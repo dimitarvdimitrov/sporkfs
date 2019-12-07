@@ -6,16 +6,6 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
-// TODO add godocs here
-type Writerer interface {
-	Writer(id, version uint64, offset int64, flags int) (w io.WriteCloser, getHash func() uint64, err error)
-}
-
-// TODO add godocs here
-type Readerer interface {
-	Reader(id, version uint64, offset, size int64) (io.ReadCloser, error)
-}
-
 type Driver interface {
 	Readerer
 	Writerer
@@ -27,3 +17,35 @@ type Driver interface {
 	Size(id, version uint64) int64
 	Sync()
 }
+
+type Writerer interface {
+	Writer(id, version uint64, flags int) (Writer, error)
+}
+
+type Readerer interface {
+	//Reader(id, version uint64, offset, size int64) (Reader, error)
+	Reader(id, hash uint64, offset, size int64) (io.ReadCloser, error)
+}
+
+type Reader interface {
+	io.ReaderAt
+	io.ReadCloser
+}
+
+type Writer interface {
+	HashCloser
+	Flusher
+	io.WriterAt
+	io.Writer
+}
+
+type Flusher interface {
+	Flush()
+}
+
+// HashCloser should return the new hash of a file on a close
+type HashCloser interface {
+	Close() uint64
+}
+
+type hashFunc func() uint64

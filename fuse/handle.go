@@ -2,16 +2,51 @@ package fuse
 
 import (
 	"context"
+	"math/rand"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
+	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/seaweedfs/fuse"
 )
 
-type handle node
+type handle struct {
+	node
+
+	r     spork.Reader
+	w     spork.Writer
+	fsync chan struct{}
+}
+
+func newHandle(n node, r spork.Reader, w spork.Writer) (handle, fuse.HandleID) {
+	fsync := make(chan struct{})
+	hId := fuse.HandleID(rand.Uint64())
+
+	fsyncReqM.Lock()
+	if chans := fsyncReq[n.Id]; chans == nil {
+		fsyncReq[n.Id] = make(map[fuse.HandleID]chan struct{}, 1)
+	}
+	fsyncReq[n.Id][hId] = fsync
+	fsyncReqM.Unlock()
+
+	h := handle{
+		node:  n,
+		r:     r,
+		w:     w,
+		fsync: fsync,
+	}
+	//go h.run()
+
+	return h, hId
+}
+
+//func (h handle) run() {
+//	for range h.fsync {
+//		h.flush()
+//	}
+//}
 
 func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	log.Debugf("read on id %d with handleID %d and nodeID %d", h.Id, req.Handle, req.Node)
 	data, err := h.spork.Read(h.File, req.Offset, int64(req.Size))
 	if err != nil {
 		return parseError(err)
@@ -21,17 +56,12 @@ func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Read
 }
 
 func (h handle) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	log.Debugf("readdirall on %s: %d", h.Name, h.Id)
 	files := h.File.Children
 	return toDirEnts(files), nil
 }
 
 func (h handle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) (err error) {
-	log.Debugf("write on %d", req.Node)
-	resp.Size, err = h.spork.Write(h.File, req.Offset, req.Data, int(req.FileFlags))
-	if err != nil {
-		log.Errorf("error writing: %s", err)
-	}
+	resp.Size, err = h.w.WriteAt(req.Data, req.Offset)
 	return parseError(err)
 }
 

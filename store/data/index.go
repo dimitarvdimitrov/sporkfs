@@ -34,5 +34,5 @@ func restoreIndex(location string) index {
 
 // newFilePath returns a supposedly unique file name based on crypto/rand and the file ID
 func newFilePath(id uint64) string {
-	return fmt.Sprintf("%x-%d", id, rand.Int())
+	return fmt.Sprintf("%d-%d", id, rand.Int())
 }

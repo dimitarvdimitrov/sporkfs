@@ -34,10 +34,6 @@ func (s Spork) Root() *store.File {
 	return s.inventory.Root()
 }
 
-func (s Spork) Get(id uint64) (*store.File, error) {
-	return s.inventory.Get(id)
-}
-
 func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 	for _, c := range f.Children {
 		if c.Name == name {
@@ -84,29 +80,17 @@ func (s Spork) fileShouldBeCached(id uint64) bool {
 	return true
 }
 
-func (s Spork) Write(f *store.File, offset int64, data []byte, flags int) (int, error) {
-	f.Lock()
-	defer f.Unlock()
-	defer func() {
-		f.Size = s.data.Size(f.Id, f.Hash)
-	}()
-
-	writer, getNewHash, err := s.data.Writer(f.Id, f.Hash, offset, flags)
+func (s Spork) Write(f *store.File, flags int) (Writer, error) {
+	w, err := s.data.Writer(f.Id, f.Hash, flags)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	defer writer.Close()
 
-	var wBuff io.Reader = bytes.NewBuffer(data)
-	written, err := io.Copy(writer, wBuff)
-	if err != nil {
-		return int(written), err
-	}
-	_ = writer.Close() // we need Close() so that getNewHash is available
-
-	f.Hash = getNewHash()
-
-	return int(written), nil
+	return &writer{
+		w:         w,
+		f:         f,
+		fileSizer: s.data,
+	}, nil
 }
 
 func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) (*store.File, error) {
@@ -202,20 +186,6 @@ func (s Spork) Delete(file, parent *store.File) error {
 
 	return nil
 }
-
-//func (s Spork) Link(file, newParent *store.File, name string) *store.File {
-//	file.RLock()
-//	defer file.RUnlock()
-//
-//	newParent.Lock()
-//	defer newParent.Unlock()
-//
-//	newFile := file.Copy()
-//	newFile.Name = name
-//	newParent.Children = append(newParent.Children, newFile)
-//
-//	return newFile
-//}
 
 func (s Spork) Close() {
 	s.data.Sync()

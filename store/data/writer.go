@@ -6,8 +6,6 @@ import (
 )
 
 type segmentedWriter struct {
-	offset int64
-
 	f interface {
 		io.Writer
 		io.WriterAt
@@ -15,25 +13,30 @@ type segmentedWriter struct {
 
 	// onClose will be called when Close() has been called
 	onClose func()
+	flush   func()
+	hash    hashFunc
 	once    sync.Once
 }
 
+func (wc *segmentedWriter) WriteAt(p []byte, off int64) (int, error) {
+	return wc.write(p, off)
+}
+
 func (wc *segmentedWriter) Write(p []byte) (int, error) {
-	var n int
-	var err error
+	return wc.write(p, 0)
+}
 
-	if wc.offset > 0 {
-		n, err = wc.f.WriteAt(p, wc.offset)
-	} else {
-		n, err = wc.f.Write(p)
-	}
-
-	wc.offset += int64(n)
-	return n, err
+func (wc *segmentedWriter) write(p []byte, off int64) (int, error) {
+	return wc.f.WriteAt(p, off)
 }
 
 // Close can be called multiple times. Any call after the first is a noop
-func (wc *segmentedWriter) Close() error {
+func (wc *segmentedWriter) Close() uint64 {
 	wc.once.Do(wc.onClose)
-	return nil
+	return wc.hash()
+}
+
+func (wc *segmentedWriter) Flush() {
+	wc.onClose()
+	wc.flush()
 }

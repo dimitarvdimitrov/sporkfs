@@ -144,30 +144,34 @@ func (d localDriver) Reader(id, hash uint64, offset, size int64) (io.ReadCloser,
 	return segReader, nil
 }
 
-func (d localDriver) Writer(id, hash uint64, offset int64, flags int) (io.WriteCloser, func() uint64, error) {
+func (d localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 	fileLocation, exists := d.index[id][hash]
 	if !exists {
-		return nil, nil, store.ErrNoSuchFile
+		return nil, store.ErrNoSuchFile
 	}
 
 	newFilename := newFilePath(id)
 	newFilePath := d.storageRoot + newFilename
 	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if flags&os.O_TRUNC == 0 && flags&os.O_CREATE == 0 && flags&os.O_APPEND == 0 {
 		flags |= os.O_TRUNC
 	}
 
-	if flags&os.O_APPEND != 0 {
+	if flags&os.O_APPEND != 0 { // we will use the file for all purposes
 		flags ^= os.O_APPEND
+	}
+
+	if flags&os.O_CREATE != 0 { // we've already duplicated the file, it's already created
+		flags ^= os.O_CREATE
 	}
 
 	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var newHash uint64
@@ -190,12 +194,19 @@ func (d localDriver) Writer(id, hash uint64, offset int64, flags int) (io.WriteC
 	}
 
 	segWriter := &segmentedWriter{
-		offset:  offset,
 		f:       file,
+		flush:   flusher(file),
 		onClose: onClose,
+		hash:    getHash,
 	}
 
-	return segWriter, getHash, nil
+	return segWriter, nil
+}
+
+func flusher(f *os.File) func() {
+	return func() {
+		_ = f.Sync()
+	}
 }
 
 func duplicateFile(oldPath, newPath string) error {

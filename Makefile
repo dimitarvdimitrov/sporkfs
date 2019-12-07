@@ -19,7 +19,7 @@ run: build force-unmount
 	$(BINDIR) $(MOUNTPOINT) $(DATADIR)
 
 force-unmount:
-	sshpass -f /home/dimitar/.password sudo umount --force $(MOUNTPOINT) || echo ''
+	fusermount -u $(MOUNTPOINT) || echo ''
 
 protos:
 	protoc -I api/pb api/pb/sporkserver.proto --go_out=plugins=grpc:api/pb

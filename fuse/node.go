@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -11,6 +12,14 @@ import (
 	"github.com/seaweedfs/fuse"
 	"github.com/seaweedfs/fuse/fs"
 )
+
+// fsyncReq holds channels that are sent on when a node received an Fsync request.
+// Each handle should add their channel here on creation.
+// This happens because the Fsync method should be on the Handle not on the Node
+// and we need a way of communicating this to the handles.
+// There is a TODO in seaweedfs.fuse to move the interface.
+var fsyncReq = map[uint64]map[fuse.HandleID]chan struct{}{}
+var fsyncReqM = sync.Mutex{}
 
 type node struct {
 	*store.File
@@ -40,8 +49,45 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	return newNode(file, n.spork), nil
 }
 
-func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	return handle(n), nil
+type anonReader struct {
+	f *store.File
+	s *spork.Spork
+}
+
+func (a anonReader) Read(p []byte) (n int, err error) {
+	result, err := a.s.Read(a.f, 0, int64(len(p)))
+	return copy(p, result), err
+}
+
+func (a anonReader) Close() error {
+	return nil
+}
+
+func (a anonReader) ReadAt(p []byte, off int64) (n int, err error) {
+	result, err := a.s.Read(a.f, off, int64(len(p)))
+	return copy(p, result), err
+}
+
+func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (h fs.Handle, err error) {
+	if n.File.Mode&store.ModeDirectory != 0 {
+		h, resp.Handle = newHandle(n, nil, nil)
+		return
+	}
+	reader, writer, err := n.open(int(req.Flags))
+	if err != nil {
+		return nil, err
+	}
+	h, resp.Handle = newHandle(n, reader, writer)
+	return
+}
+
+func (n node) open(flags int) (spork.Reader, spork.Writer, error) {
+	writer, err := n.spork.Write(n.File, flags)
+	reader := anonReader{
+		f: n.File,
+		s: n.spork,
+	}
+	return reader, writer, err
 }
 
 func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
@@ -50,7 +96,17 @@ func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		return nil, nil, err
 	}
 	node := newNode(f, n.spork)
-	return node, handle(node), nil
+
+	var reader spork.Reader
+	var writer spork.Writer
+
+	if node.Mode&store.ModeDirectory == 0 {
+		reader, writer, err = node.open(int(req.Flags))
+	}
+	h, hId := newHandle(node, reader, writer)
+	resp.Handle = hId
+
+	return node, h, err
 }
 
 func (n node) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
@@ -92,19 +148,18 @@ func (n node) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	return parseError(n.spork.Delete(file, n.File))
 }
 
-//func (n node) Link(ctx context.Context, req *fuse.LinkRequest, source fs.Node) (fs.Node, error) {
-//	sourceNode, ok := source.(node)
-//	if !ok {
-//		err := fmt.Errorf("passed node to node.Link() is of type %T, not %T", source, n)
-//		log.Error(err)
-//		return nil, err
-//	}
-//
-//	newFile := n.spork.Link(sourceNode.File, n.File, req.NewName)
-//	return newNode(newFile), nil
-//}
-
-// TODO keep an eye if this is still acceptable
 func (n node) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	fsyncReqM.Lock()
+	defer fsyncReqM.Unlock()
+
+	chans := fsyncReq[n.Id]
+	for _, handle := range chans {
+		select {
+		case handle <- struct{}{}:
+		default:
+			// i.e. there's already a pending fsync
+		}
+	}
+
 	return nil
 }
