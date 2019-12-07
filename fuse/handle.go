@@ -12,14 +12,15 @@ import (
 )
 
 type handle struct {
-	node
+	id   fuse.HandleID
+	node node
 
-	r     spork.Reader
-	w     spork.Writer
+	r     spork.ReadCloser
+	w     spork.WriteCloser
 	fsync chan struct{}
 }
 
-func newHandle(n node, r spork.Reader, w spork.Writer) (handle, fuse.HandleID) {
+func newHandle(n node, r spork.ReadCloser, w spork.WriteCloser) handle {
 	fsync := make(chan struct{})
 	hId := fuse.HandleID(rand.Uint64())
 
@@ -31,6 +32,7 @@ func newHandle(n node, r spork.Reader, w spork.Writer) (handle, fuse.HandleID) {
 	fsyncReqM.Unlock()
 
 	h := handle{
+		id:    hId,
 		node:  n,
 		r:     r,
 		w:     w,
@@ -38,7 +40,7 @@ func newHandle(n node, r spork.Reader, w spork.Writer) (handle, fuse.HandleID) {
 	}
 	go h.run()
 
-	return h, hId
+	return h
 }
 
 func (h handle) run() {
@@ -58,7 +60,7 @@ func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Read
 }
 
 func (h handle) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	files := h.File.Children
+	files := h.node.File.Children
 	return toDirEnts(files), nil
 }
 
@@ -104,18 +106,18 @@ func (h handle) flush() {
 func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error) {
 	fsyncReqM.Lock()
 	close(h.fsync)
-	delete(fsyncReq[h.Id], req.Handle)
+	delete(fsyncReq[h.node.File.Id], h.id)
 	fsyncReqM.Unlock()
 
 	if h.r != nil {
 		if rErr := h.r.Close(); rErr != nil {
-			log.Errorf("closing reader %x: %s", h.File.Id, rErr)
+			log.Errorf("closing reader %x: %s", h.node.File.Id, rErr)
 			err = rErr
 		}
 	}
 	if h.w != nil {
 		if wErr := h.w.Close(); wErr != nil {
-			log.Errorf("closing writer %x: %s", h.File.Id, wErr)
+			log.Errorf("closing writer %x: %s", h.node.File.Id, wErr)
 			err = wErr
 		}
 	}

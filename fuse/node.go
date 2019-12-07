@@ -50,15 +50,18 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 }
 
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (h fs.Handle, err error) {
+
 	if n.File.Mode&store.ModeDirectory != 0 {
-		h, resp.Handle = newHandle(n, nil, nil)
+		handle := newHandle(n, nil, nil)
+		resp.Handle, h = handle.id, handle
 		return
 	}
 	reader, writer, err := n.open(int(req.Flags))
 	if err != nil {
 		return nil, err
 	}
-	h, resp.Handle = newHandle(n, reader, writer)
+	handle := newHandle(n, reader, writer)
+	h, resp.Handle = handle, handle.id
 	return
 }
 
@@ -86,8 +89,8 @@ func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	if node.Mode&store.ModeDirectory == 0 {
 		reader, writer, err = node.open(int(req.Flags))
 	}
-	h, hId := newHandle(node, reader, writer)
-	resp.Handle = hId
+	h := newHandle(node, reader, writer)
+	resp.Handle = h.id
 
 	return node, h, err
 }
