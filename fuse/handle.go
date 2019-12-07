@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"context"
+	"io"
 	"math/rand"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
@@ -35,16 +36,16 @@ func newHandle(n node, r spork.Reader, w spork.Writer) (handle, fuse.HandleID) {
 		w:     w,
 		fsync: fsync,
 	}
-	//go h.run()
+	go h.run()
 
 	return h, hId
 }
 
-//func (h handle) run() {
-//	for range h.fsync {
-//		h.flush()
-//	}
-//}
+func (h handle) run() {
+	for range h.fsync {
+		h.flush()
+	}
+}
 
 func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	data, err := h.spork.Read(h.File, req.Offset, int64(req.Size))
@@ -81,4 +82,36 @@ func toDirEnts(files []*store.File) []fuse.Dirent {
 		}
 	}
 	return dirEnts
+}
+
+func (h handle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	h.flush()
+	return nil
+}
+
+func (h handle) flush() {
+	if h.w != nil {
+		h.w.Flush()
+	}
+}
+
+func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error) {
+	fsyncReqM.Lock()
+	close(h.fsync)
+	delete(fsyncReq[h.Id], req.Handle)
+	fsyncReqM.Unlock()
+
+	if h.r != nil {
+		if rErr := h.r.Close(); rErr != nil {
+			log.Errorf("closing reader %x: %s", h.File.Id, rErr)
+			err = rErr
+		}
+	}
+	if h.w != nil {
+		if wErr := h.w.Close(); wErr != nil {
+			log.Errorf("closing writer %x: %s", h.File.Id, wErr)
+			err = wErr
+		}
+	}
+	return err
 }

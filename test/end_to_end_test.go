@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -30,7 +31,7 @@ func (s *E2eSuite) TestCreateEmptyFile() {
 	s.FileExists(tmpFile.Name())
 }
 
-func (s *E2eSuite) TestCreateFileAndWrite() {
+func (s *E2eSuite) TestFsync() {
 	tmpFile, err := ioutil.TempFile(s.mountDir, "non-empty-file-")
 	s.NoError(err)
 	defer func() {
@@ -43,9 +44,40 @@ func (s *E2eSuite) TestCreateFileAndWrite() {
 	s.NoError(err)
 	s.Equal(len(contentToWrite), bytesWritten)
 
+	s.NoError(tmpFile.Sync())
+
 	contentFound, err := ioutil.ReadFile(tmpFile.Name())
 	s.NoError(err)
 	s.Equal(contentToWrite, contentFound)
+}
+
+func (s *E2eSuite) TestAppendToFile() {
+	tmpFile, err := ioutil.TempFile(s.mountDir, "file-to-append-to-")
+	s.NoError(err)
+	defer func() {
+		s.NoError(os.Remove(tmpFile.Name()))
+	}()
+
+	contentToWrite := []byte("this is a test")
+	bytesWritten, err := tmpFile.Write(contentToWrite)
+	s.NoError(err)
+	s.Equal(len(contentToWrite), bytesWritten)
+	tmpFile.Close()
+
+	f, err := os.OpenFile(tmpFile.Name(), os.O_APPEND|os.O_RDWR, store.ModeRegularFile)
+	s.NoError(err)
+	defer func() {
+		s.NoError(f.Close())
+	}()
+	contentToAppend := []byte("\nappended text")
+	bytesWritten, err = f.Write(contentToAppend)
+	s.NoError(err)
+	s.Equal(len(contentToAppend), bytesWritten)
+	s.NoError(f.Sync())
+
+	contentFound, err := ioutil.ReadFile(tmpFile.Name())
+	s.NoError(err)
+	s.Equal(append(contentToWrite, contentToAppend...), contentFound)
 }
 
 func (s *E2eSuite) TestCreateEmptyDir() {
