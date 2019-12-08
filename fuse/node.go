@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -18,9 +19,8 @@ import (
 // This happens because the Fsync method should be on the Handle not on the Node
 // and we need a way of communicating this to the handles.
 // There is a TODO in seaweedfs.fuse to move the interface.
-var fsyncReq = map[uint64]map[fuse.HandleID]chan struct{}{}
+var fsyncReq = map[uint64]map[fuse.HandleID]chan *sync.WaitGroup{}
 var fsyncReqM = sync.Mutex{}
-var fsyncWg = sync.WaitGroup{}
 
 type node struct {
 	*store.File
@@ -35,11 +35,43 @@ func newNode(f *store.File, s *spork.Spork) node {
 }
 
 func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
+	n.File.RLock()
+	defer n.File.RUnlock()
+
 	attr.Inode = n.Id
 	attr.Mode = n.Mode
 	attr.Size = uint64(n.Size)
+	attr.Atime = n.Atime
+	attr.Mtime = n.Mtime
 
 	return nil
+}
+
+func (n node) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
+	n.File.Lock()
+	if req.Valid&fuse.SetattrSize != 0 {
+		n.Size = int64(req.Size)
+	}
+	if req.Valid&fuse.SetattrMode != 0 {
+		n.Mode = req.Mode
+	}
+	if req.Valid&fuse.SetattrAtime != 0 || req.Valid&fuse.SetattrAtimeNow != 0 {
+		t := req.Atime
+		if req.Valid&fuse.SetattrAtimeNow != 0 {
+			t = time.Now()
+		}
+		n.Atime = t
+	}
+	if req.Valid&fuse.SetattrMtime != 0 || req.Valid&fuse.SetattrMtimeNow != 0 {
+		t := req.Mtime
+		if req.Valid&fuse.SetattrMtimeNow != 0 {
+			t = time.Now()
+		}
+		n.Atime = t
+	}
+	n.File.Unlock()
+
+	return n.Attr(ctx, &resp.Attr)
 }
 
 func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
@@ -50,20 +82,23 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	return newNode(file, n.spork), nil
 }
 
-func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (h fs.Handle, err error) {
+func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
+	n.File.Lock()
+	defer n.File.Unlock()
 
-	if n.File.Mode&store.ModeDirectory != 0 {
-		handle := newHandle(n, nil, nil)
-		resp.Handle, h = handle.id, handle
-		return
+	var r spork.ReadCloser
+	var w spork.WriteCloser
+
+	if !req.Dir {
+		var err error
+		r, w, err = n.open(int(req.Flags))
+		if err != nil {
+			return nil, err
+		}
 	}
-	reader, writer, err := n.open(int(req.Flags))
-	if err != nil {
-		return nil, err
-	}
-	handle := newHandle(n, reader, writer)
-	h, resp.Handle = handle, handle.id
-	return
+	handle := newHandle(n, r, w)
+	resp.Handle = handle.id
+	return handle, nil
 }
 
 func (n node) open(flags int) (r spork.ReadCloser, w spork.WriteCloser, err error) {
@@ -142,18 +177,22 @@ func (n node) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 func (n node) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	fsyncReqM.Lock()
-	defer fsyncReqM.Unlock()
-
-	chans := fsyncReq[n.Id]
-	for _, handle := range chans {
-		select {
-		case handle <- struct{}{}:
-			fsyncWg.Add(1)
-		default:
-			// i.e. there's already a pending fsync
-		}
+	handleFsync, ok := fsyncReq[n.Id][req.Handle]
+	if !ok {
+		fsyncReqM.Unlock()
+		return nil
 	}
-	fsyncWg.Wait()
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	select {
+	case handleFsync <- wg:
+	default:
+		// i.e. there's already a pending fsync
+		wg.Done()
+	}
+	fsyncReqM.Unlock()
+	wg.Wait()
 
 	return nil
 }

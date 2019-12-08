@@ -25,8 +25,9 @@ type WriteCloser interface {
 type writer struct {
 	f *store.File
 
-	fileSizer sizer
-	w         data.Writer
+	invalidate chan<- *store.File
+	fileSizer  sizer
+	w          data.Writer
 }
 
 func (w *writer) Flush() {
@@ -50,5 +51,6 @@ func (w *writer) Write(p []byte) (int, error) {
 func (w *writer) Close() error {
 	w.f.Hash = w.w.Close()
 	w.f.Size = w.fileSizer.Size(w.f.Id, w.f.Hash)
+	w.invalidate <- w.f // TODO maybe remove this this?
 	return nil
 }

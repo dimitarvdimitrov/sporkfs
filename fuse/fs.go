@@ -10,15 +10,38 @@ import (
 )
 
 type Fs struct {
-	S spork.Spork
+	S            *spork.Spork
+	invalidFiles <-chan *store.File
+	invalidNode  chan<- fs.Node
+}
+
+func NewFS(s *spork.Spork, files <-chan *store.File, nodes chan<- fs.Node) Fs {
+	f := Fs{
+		S:            s,
+		invalidFiles: files,
+		invalidNode:  nodes,
+	}
+	go f.watchInvalidations()
+	return f
 }
 
 func (f Fs) Root() (fs.Node, error) {
-	return newNode(f.S.Root(), &f.S), nil
+	return newNode(f.S.Root(), f.S), nil
 }
 
 func (f Fs) Destroy() {
 	f.S.Close()
+}
+
+func (f Fs) watchInvalidations() {
+	for {
+		file, ok := <-f.invalidFiles
+		if !ok {
+			close(f.invalidNode)
+			break
+		}
+		f.invalidNode <- newNode(file, f.S)
+	}
 }
 
 func parseError(err error) error {

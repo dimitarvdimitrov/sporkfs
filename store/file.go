@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"sync"
+	"time"
 )
 
 type FileMode = os.FileMode
@@ -15,11 +16,13 @@ const (
 type File struct {
 	*sync.RWMutex
 
-	Id   uint64
-	Name string
-	Mode FileMode
-	Size int64
-	Hash uint64
+	Id    uint64
+	Name  string
+	Mode  FileMode
+	Size  int64
+	Hash  uint64
+	Atime time.Time
+	Mtime time.Time
 
 	Children []*File
 }

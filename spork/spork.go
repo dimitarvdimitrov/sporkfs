@@ -15,16 +15,18 @@ type Spork struct {
 	data, cache data.Driver
 	fetcher     data.Readerer
 
-	cfg Config
+	cfg     Config
+	invalid chan<- *store.File
 }
 
-func New(data, cache data.Driver, inv inventory.Driver, cfg Config) Spork {
+func New(data, cache data.Driver, inv inventory.Driver, cfg Config, invalid chan<- *store.File) Spork {
 	sort.Strings(cfg.Peers)
 	return Spork{
 		inventory: inv,
 		data:      data,
 		cache:     cache,
 		cfg:       cfg,
+		invalid:   invalid,
 	}
 }
 
@@ -53,9 +55,10 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			r: r,
 		},
 		w: &writer{
-			f:         f,
-			fileSizer: s.data,
-			w:         w,
+			f:          f,
+			fileSizer:  s.data,
+			w:          w,
+			invalidate: s.invalid,
 		},
 	}
 	return rw, nil
@@ -66,9 +69,6 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 }
 
 func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (ReadCloser, error) {
-	f.RLock()
-	defer f.RUnlock()
-
 	r, err := s.data.Reader(f.Id, version, flags)
 	if err != nil {
 		return nil, err
@@ -91,18 +91,16 @@ func (s Spork) fileShouldBeCached(id uint64) bool {
 }
 
 func (s Spork) Write(f *store.File, flags int) (WriteCloser, error) {
-	f.Lock()
-	defer f.Unlock()
-
 	w, err := s.data.Writer(f.Id, f.Hash, flags)
 	if err != nil {
 		return nil, err
 	}
 
 	return &writer{
-		w:         w,
-		f:         f,
-		fileSizer: s.data,
+		w:          w,
+		f:          f,
+		fileSizer:  s.data,
+		invalidate: s.invalid,
 	}, nil
 }
 

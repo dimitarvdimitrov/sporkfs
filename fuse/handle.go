@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -17,16 +18,16 @@ type handle struct {
 
 	r     spork.ReadCloser
 	w     spork.WriteCloser
-	fsync chan struct{}
+	fsync chan *sync.WaitGroup
 }
 
 func newHandle(n node, r spork.ReadCloser, w spork.WriteCloser) handle {
-	fsync := make(chan struct{})
+	fsync := make(chan *sync.WaitGroup)
 	hId := fuse.HandleID(rand.Uint64())
 
 	fsyncReqM.Lock()
 	if chans := fsyncReq[n.Id]; chans == nil {
-		fsyncReq[n.Id] = make(map[fuse.HandleID]chan struct{}, 1)
+		fsyncReq[n.Id] = make(map[fuse.HandleID]chan *sync.WaitGroup, 1)
 	}
 	fsyncReq[n.Id][hId] = fsync
 	fsyncReqM.Unlock()
@@ -44,9 +45,9 @@ func newHandle(n node, r spork.ReadCloser, w spork.WriteCloser) handle {
 }
 
 func (h handle) run() {
-	for range h.fsync {
+	for wg := range h.fsync {
 		h.flush()
-		fsyncWg.Done()
+		wg.Done()
 	}
 }
 
@@ -104,14 +105,15 @@ func (h handle) flush() {
 	}
 }
 
-func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error) {
-	// TODO maybe as to go at some point
+func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
+	if req.Dir {
+		return nil
+	}
+
+	// TODO maybe this locking has to go at some point
 	h.node.File.Lock()
 	defer h.node.File.Unlock()
-
-	if req.Dir {
-		return
-	}
+	fId := h.node.File.Id
 
 	if req.ReleaseFlags&fuse.ReleaseFlush != 0 {
 		h.flush()
@@ -119,18 +121,22 @@ func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) (err erro
 
 	fsyncReqM.Lock()
 	close(h.fsync)
-	delete(fsyncReq[h.node.File.Id], h.id)
+	delete(fsyncReq[fId], h.id)
+	if len(fsyncReq[fId]) == 0 {
+		delete(fsyncReq, fId)
+	}
 	fsyncReqM.Unlock()
 
+	var err error
 	if h.r != nil {
 		if rErr := h.r.Close(); rErr != nil {
-			log.Errorf("closing reader %x: %s", h.node.File.Id, rErr)
+			log.Errorf("closing reader %x: %s", fId, rErr)
 			err = rErr
 		}
 	}
 	if h.w != nil {
 		if wErr := h.w.Close(); wErr != nil {
-			log.Errorf("closing writer %x: %s", h.node.File.Id, wErr)
+			log.Errorf("closing writer %x: %s", fId, wErr)
 			err = wErr
 		}
 	}

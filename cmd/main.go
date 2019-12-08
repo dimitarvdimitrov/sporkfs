@@ -1,18 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
-	"syscall"
 
 	"github.com/dimitarvdimitrov/sporkfs/api"
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
+	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 	"github.com/seaweedfs/fuse"
@@ -29,43 +30,53 @@ func main() {
 	dataDir := flag.Arg(1)
 	thisPeer := flag.Arg(2)
 
-	done := make(chan struct{}, 2)
+	ctx, cancel := context.WithCancel(context.Background())
 	cfg := newSporkConfig(dataDir)
 	cfg.ThisPeer = thisPeer
 
 	dataStorage := data.NewLocalDriver(cfg.DataLocation)
 	inv := inventory.NewDriver(cfg.InventoryLocation)
 
-	sporkService := spork.New(dataStorage, nil, inv, cfg)
-	vfs := sfuse.Fs{S: sporkService}
+	invNodes := make(chan fs.Node)
+	invFiles := make(chan *store.File)
 
-	startFuseServer(mountpoint, vfs, done)
+	sporkService := spork.New(dataStorage, nil, inv, cfg, invFiles)
+	vfs := sfuse.NewFS(&sporkService, invFiles, invNodes)
+
+	startFuseServer(ctx, cancel, mountpoint, vfs, invNodes)
 	defer vfs.Destroy()
+	startSporkServer(ctx, cancel, thisPeer, dataStorage)
+	handleOsSignals(ctx, cancel)
+	unmountWhenDone(ctx, mountpoint)
 
-	grpcServer := startSporkServer(thisPeer, dataStorage, done)
-	defer grpcServer.GracefulStop()
-
-	unmountOnOsSignals(mountpoint, done)
-
-	<-done
+	<-ctx.Done()
 	log.Info("stopping spork...")
 }
 
-func unmountOnOsSignals(mountpoint string, done chan struct{}) {
+func handleOsSignals(ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		signals := make(chan os.Signal)
 		signal.Notify(signals, os.Kill, os.Interrupt)
-		<-signals
 
-		if err := syscall.Unmount(mountpoint, 0); err != nil {
-			log.Errorf("unmount: %s", err)
+		select {
+		case <-signals:
+		case <-ctx.Done():
 		}
 
-		done <- struct{}{}
+		cancel()
 	}()
 }
 
-func startFuseServer(mountpoint string, vfs sfuse.Fs, done chan struct{}) {
+func unmountWhenDone(ctx context.Context, mountpoint string) {
+	go func() {
+		<-ctx.Done()
+		if err := fuse.Unmount(mountpoint); err != nil {
+			log.Errorf("unmount: %s", err)
+		}
+	}()
+}
+
+func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint string, vfs sfuse.Fs, invalidations <-chan fs.Node) {
 	log.Infof("mounting sporkfs at %s...", mountpoint)
 	fuseConn, err := fuse.Mount(mountpoint,
 		fuse.FSName("sporkfs"),
@@ -74,23 +85,37 @@ func startFuseServer(mountpoint string, vfs sfuse.Fs, done chan struct{}) {
 	if err != nil {
 		log.Fatal("couldn't mount: ", err)
 	}
+	log.Infof("mount successful")
 
 	fuseServer := fs.New(fuseConn, &fs.Config{
 		Debug: func(m interface{}) { log.Debug(m) },
 	})
-
-	log.Infof("mount successful")
 
 	go func() {
 		log.Info("sporkfs started")
 		if err := fuseServer.Serve(vfs); err != nil {
 			log.Error("serve: ", err)
 		}
-		done <- struct{}{}
+		cancel()
+	}()
+
+	go func() {
+		for {
+			select {
+			case n, ok := <-invalidations:
+				if !ok {
+					return
+				}
+				_ = fuseServer.InvalidateNodeAttr(n)
+				_ = fuseServer.InvalidateNodeData(n)
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 }
 
-func startSporkServer(listenAddr string, s data.Driver, done chan struct{}) *grpc.Server {
+func startSporkServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, s data.Driver) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
@@ -103,10 +128,13 @@ func startSporkServer(listenAddr string, s data.Driver, done chan struct{}) *grp
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Error(err)
 		}
-		done <- struct{}{}
+		cancel()
 	}()
 
-	return grpcServer
+	go func() {
+		<-ctx.Done()
+		grpcServer.GracefulStop()
+	}()
 }
 
 func newSporkConfig(dir string) spork.Config {
