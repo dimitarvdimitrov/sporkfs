@@ -200,15 +200,16 @@ func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
 
 func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 	d.indexM.RLock()
-	fileLocation, exists := d.index[id][hash]
+	oldLocation, exists := d.index[id][hash]
 	d.indexM.RUnlock()
 	if !exists {
 		return nil, store.ErrNoSuchFile
 	}
+	oldFilePath := d.storageRoot + oldLocation
 
 	newLocation := newStorageLocation(id)
 	newFilePath := d.storageRoot + newLocation
-	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
+	err := duplicateFile(oldFilePath, newFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -234,15 +235,14 @@ func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 
 func (d *localDriver) newSegWriter(id, oldHash uint64, file *os.File, storageLocation string) *segmentedWriter {
 	var newHash uint64
-	filePath := file.Name()
+	absoluteLocation := file.Name()
 
 	onClose := func() {
-		_ = file.Sync()
 		_ = file.Close()
 
-		newHash = hashPath(filePath)
+		newHash = hashPath(absoluteLocation)
 		if newHash == oldHash {
-			removeFromDisk(filePath)
+			go removeFromDisk(absoluteLocation)
 		} else {
 			d.indexM.Lock()
 			defer d.indexM.Unlock()
@@ -287,10 +287,10 @@ func duplicateFile(oldPath, newPath string) error {
 func (d *localDriver) Size(id, hash uint64) int64 {
 	d.indexM.RLock()
 	descriptor, err := os.Open(d.storageRoot + d.index[id][hash])
+	d.indexM.RUnlock()
 	if err != nil {
 		return 0
 	}
-	d.indexM.RUnlock()
 	defer descriptor.Close()
 
 	info, err := descriptor.Stat()
