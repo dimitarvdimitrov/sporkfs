@@ -18,7 +18,7 @@ import (
 // Each handle should add their channel here on creation.
 // This happens because the Fsync method should be on the Handle not on the Node
 // and we need a way of communicating this to the handles.
-// There is a TODO in seaweedfs.fuse to move the interface.
+// There is a TO DO in seaweedfs.fuse to move the interface.
 var fsyncReq = map[uint64]map[fuse.HandleID]chan *sync.WaitGroup{}
 var fsyncReqM = sync.Mutex{}
 

@@ -12,10 +12,12 @@ import (
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
+	"github.com/dimitarvdimitrov/sporkfs/raft/index"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
+	"github.com/dimitarvdimitrov/sporkfs/store/remote"
 	"github.com/seaweedfs/fuse"
 	"github.com/seaweedfs/fuse/fs"
 	"google.golang.org/grpc"
@@ -33,14 +35,30 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := newSporkConfig(dataDir)
 	cfg.ThisPeer = thisPeer
+	peers := index.NewPeerList(cfg.Peers, cfg.ThisPeer)
 
-	dataStorage := data.NewLocalDriver(cfg.DataLocation)
-	inv := inventory.NewDriver(cfg.InventoryLocation)
+	dataStorage, err := data.NewLocalDriver(cfg.DataLocation)
+	if err != nil {
+		log.Fatalf("init data driver: %s", err)
+	}
+	cacheStorage, err := data.NewLocalDriver(cfg.CacheLocation)
+	if err != nil {
+		log.Fatalf("init data driver: %s", err)
+	}
 
+	inv, err := inventory.NewDriver(cfg.InventoryLocation)
+	if err != nil {
+		log.Fatalf("init inventory: %s", err)
+	}
+
+	fetcher, err := remote.NewFetcher(index.NewPeerList(cfg.Peers, cfg.ThisPeer))
+	if err != nil {
+		log.Fatalf("init fetcher: %s", err)
+	}
 	invNodes := make(chan fs.Node)
 	invFiles := make(chan *store.File)
 
-	sporkService := spork.New(dataStorage, nil, inv, cfg, invFiles)
+	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
 	vfs := sfuse.NewFS(&sporkService, invFiles, invNodes)
 
 	startFuseServer(ctx, cancel, mountpoint, vfs, invNodes)
@@ -141,6 +159,7 @@ func newSporkConfig(dir string) spork.Config {
 	return spork.Config{
 		InventoryLocation: fmt.Sprintf("%s/%s", dir, "inventory"),
 		DataLocation:      fmt.Sprintf("%s/%s", dir, "data"),
+		CacheLocation:     fmt.Sprintf("%s/%s", dir, "cache"),
 		Peers:             []string{"localhost:8080", "localhost:8081"},
 	}
 }

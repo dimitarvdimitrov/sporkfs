@@ -1,31 +1,35 @@
 package spork
 
 import (
-	"sort"
+	"io"
+	"os"
 	"sync"
+
+	"github.com/dimitarvdimitrov/sporkfs/log"
 
 	"github.com/dimitarvdimitrov/sporkfs/raft/index"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
+	"github.com/dimitarvdimitrov/sporkfs/store/remote"
 )
 
 type Spork struct {
 	inventory   inventory.Driver
 	data, cache data.Driver
-	fetcher     data.Readerer
+	fetcher     remote.Readerer
 
-	cfg     Config
+	peers   *index.Peers
 	invalid chan<- *store.File
 }
 
-func New(data, cache data.Driver, inv inventory.Driver, cfg Config, invalid chan<- *store.File) Spork {
-	sort.Strings(cfg.Peers)
+func New(data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *index.Peers, invalid chan<- *store.File) Spork {
 	return Spork{
 		inventory: inv,
 		data:      data,
 		cache:     cache,
-		cfg:       cfg,
+		fetcher:   fetcher,
+		peers:     peers,
 		invalid:   invalid,
 	}
 }
@@ -69,7 +73,18 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 }
 
 func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (ReadCloser, error) {
-	r, err := s.data.Reader(f.Id, version, flags)
+	driver := s.data
+
+	if !s.peers.IsLocalFile(f.Id) {
+		log.Debugf("reading remote file")
+		err := s.transferRemoteFile(f.Id, version)
+		if err != nil {
+			return nil, err
+		}
+		driver = s.cache
+	}
+
+	r, err := driver.Reader(f.Id, version, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -80,18 +95,48 @@ func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (ReadCloser
 	}, nil
 }
 
-func (s Spork) fileShouldBeCached(id uint64) bool {
-	peersWithFile := index.FindPeers(s.cfg.Peers, id)
-	for _, p := range peersWithFile {
-		if p == s.cfg.ThisPeer {
-			return false
-		}
+func (s Spork) transferRemoteFile(id, version uint64) error {
+	log.Debugf("transferring remote file %d-%d", id, version)
+	if s.cache.Contains(id, version) {
+		return nil
 	}
-	return true
+
+	v, err := s.cache.Add(id, store.ModeRegularFile)
+	if err != nil {
+		return err
+	}
+
+	w, err := s.cache.Writer(id, v, os.O_WRONLY)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	r, err := s.fetcher.Reader(id, version)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	_, err = io.Copy(w, r)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s Spork) Write(f *store.File, flags int) (WriteCloser, error) {
-	w, err := s.data.Writer(f.Id, f.Hash, flags)
+	driver := s.data
+
+	if !s.peers.IsLocalFile(f.Id) {
+		err := s.transferRemoteFile(f.Id, f.Hash)
+		if err != nil {
+			return nil, err
+		}
+		driver = s.cache
+	}
+
+	w, err := driver.Writer(f.Id, f.Hash, flags)
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,7 @@
 package spork
 
 type Config struct {
-	InventoryLocation, DataLocation string
-	Peers                           []string
-	ThisPeer                        string
+	InventoryLocation, DataLocation, CacheLocation string
+	Peers                                          []string
+	ThisPeer                                       string
 }
