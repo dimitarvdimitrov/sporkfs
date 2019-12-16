@@ -9,8 +9,6 @@ service File {
 message ReadRequest {
     uint64 id = 1;
     uint64 version = 2;
-    int64 offset = 3;
-    int64 size = 4;
 }
 
 message ReadReply {
