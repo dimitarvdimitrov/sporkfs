@@ -12,32 +12,34 @@ import (
 
 const grpcBufferSize = 5 * api.ChunkSize
 
+type Readerer interface {
+	Reader(id, version uint64) (io.ReadCloser, error)
+}
+
 type grpcFetcher struct {
 	client proto.FileClient
 }
 
-func NewGrpcFetcher(remoteUrl string) (*grpcFetcher, error) {
+func newGrpcFetcher(remoteUrl string) (grpcFetcher, error) {
 	conn, err := grpc.Dial(remoteUrl,
 		grpc.WithInsecure(),
 		grpc.WithReadBufferSize(grpcBufferSize),
 	)
 	if err != nil {
-		return nil, err
+		return grpcFetcher{}, err
 	}
 
-	return &grpcFetcher{
+	return grpcFetcher{
 		client: proto.NewFileClient(conn),
 	}, nil
 }
 
-func (f grpcFetcher) Reader(id, version uint64, offset, size int64) (io.ReadCloser, error) {
+func (f grpcFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	req := &proto.ReadRequest{
 		Id:      id,
 		Version: version,
-		Offset:  offset,
-		Size:    size,
 	}
 
 	stream, err := f.client.Read(ctx, req, grpc.WaitForReady(true))
@@ -82,7 +84,7 @@ func (r grpcAsyncReader) run() {
 	for {
 		select {
 		case <-r.done:
-			break
+			return
 		default:
 		}
 
