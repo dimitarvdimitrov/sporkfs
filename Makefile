@@ -2,18 +2,16 @@ MOUNTPOINT:=/mnt/sporkfs
 DATADIR:=/opt/storage
 BINDIR:=bin/sporkfs
 MAIN:=cmd/main.go
+GOFLAGS:=$(GOFLAGS) CGO_ENABLED=0
 
 all: test
 
 .PHONY: test
 test: build
-	go test ./...
-
-terraform-create:
-	cd infrastructure; terraform apply -input=false
+	$(GOFLAGS) go test ./...
 
 build:
-	go build -o $(BINDIR) $(MAIN)
+	$(GOFLAGS) go build -o $(BINDIR) $(MAIN)
 
 run: build force-unmount
 	$(BINDIR) $(MOUNTPOINT) $(DATADIR)
