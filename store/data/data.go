@@ -23,12 +23,16 @@ type localDriver struct {
 	index       index
 }
 
-func NewLocalDriver(location string) *localDriver {
+func NewLocalDriver(location string) (*localDriver, error) {
+	if err := os.MkdirAll(location, os.ModeDir|0755); err != nil {
+		return nil, err
+	}
+
 	return &localDriver{
 		storageRoot: location + "/",
 		index:       restoreIndex(location),
 		indexM:      &sync.RWMutex{},
-	}
+	}, nil
 }
 
 func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
@@ -50,7 +54,7 @@ func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 		return 0, err
 	}
 	defer f.Close()
-	log.Debugf("created internal file %s for file id %d", filePath)
+	log.Debugf("created internal file %s", filePath)
 
 	hash := hashHandle(f)
 	d.index[id] = map[uint64]string{hash: filePath}

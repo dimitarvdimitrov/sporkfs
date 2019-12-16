@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"encoding/binary"
+	"os"
 	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/store"
@@ -16,7 +17,10 @@ type Driver struct {
 	catalog  map[uint64]*store.File
 }
 
-func NewDriver(location string) Driver {
+func NewDriver(location string) (Driver, error) {
+	if err := os.MkdirAll(location, os.ModeDir|0755); err != nil {
+		return Driver{}, err
+	}
 	root := restoreInventory(location + indexLocation)
 	c := make(map[uint64]*store.File)
 	catalogFiles(root, c)
@@ -26,7 +30,7 @@ func NewDriver(location string) Driver {
 		location: location,
 		root:     root,
 		catalog:  c,
-	}
+	}, nil
 }
 
 func catalogFiles(root *store.File, catalog map[uint64]*store.File) {
