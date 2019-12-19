@@ -3,6 +3,7 @@ module github.com/dimitarvdimitrov/sporkfs
 go 1.13
 
 require (
+	github.com/BurntSushi/toml v0.3.1
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v1.1.1
 	github.com/minio/highwayhash v1.0.0

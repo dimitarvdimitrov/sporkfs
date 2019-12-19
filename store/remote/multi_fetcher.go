@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/dimitarvdimitrov/sporkfs/raft/index"
@@ -36,6 +37,9 @@ func (f multiFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 			continue
 		}
 		return r, nil
+	}
+	if prevErr == nil {
+		return nil, fmt.Errorf("couldn't find suitable peer for file %d-%d", id, version)
 	}
 	return nil, prevErr
 }

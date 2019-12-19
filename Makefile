@@ -8,7 +8,7 @@ all: test
 
 .PHONY: test
 test: build
-	$(GOFLAGS) go test ./...
+	$(GOFLAGS) go test -timeout 10s ./...
 
 build:
 	$(GOFLAGS) go build -o $(BINDIR) $(MAIN)

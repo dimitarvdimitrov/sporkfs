@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
 
+	"github.com/BurntSushi/toml"
 	"github.com/dimitarvdimitrov/sporkfs/api"
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
@@ -28,30 +28,28 @@ func main() {
 	defer log.Sync()
 
 	flag.Parse()
-	mountpoint := flag.Arg(0)
-	dataDir := flag.Arg(1)
-	thisPeer := flag.Arg(2)
+	cfgLocation := flag.Arg(0)
+
+	cfg := parseConfig(cfgLocation)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cfg := newSporkConfig(dataDir)
-	cfg.ThisPeer = thisPeer
-	peers := index.NewPeerList(cfg.Peers, cfg.ThisPeer)
+	peers := index.NewPeerList(cfg.Peers)
 
-	dataStorage, err := data.NewLocalDriver(cfg.DataLocation)
+	dataStorage, err := data.NewLocalDriver(cfg.DataDir + "/data")
 	if err != nil {
 		log.Fatalf("init data driver: %s", err)
 	}
-	cacheStorage, err := data.NewLocalDriver(cfg.CacheLocation)
+	cacheStorage, err := data.NewLocalDriver(cfg.DataDir + "/cache")
 	if err != nil {
 		log.Fatalf("init data driver: %s", err)
 	}
 
-	inv, err := inventory.NewDriver(cfg.InventoryLocation)
+	inv, err := inventory.NewDriver(cfg.DataDir + "/inventory")
 	if err != nil {
 		log.Fatalf("init inventory: %s", err)
 	}
 
-	fetcher, err := remote.NewFetcher(index.NewPeerList(cfg.Peers, cfg.ThisPeer))
+	fetcher, err := remote.NewFetcher(peers)
 	if err != nil {
 		log.Fatalf("init fetcher: %s", err)
 	}
@@ -61,11 +59,11 @@ func main() {
 	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
 	vfs := sfuse.NewFS(&sporkService, invFiles, invNodes)
 
-	startFuseServer(ctx, cancel, mountpoint, vfs, invNodes)
+	startFuseServer(ctx, cancel, cfg.MountPoint, vfs, invNodes)
 	defer vfs.Destroy()
-	startSporkServer(ctx, cancel, thisPeer, dataStorage)
+	startSporkServer(ctx, cancel, cfg.Peers.ThisPeer, dataStorage)
 	handleOsSignals(ctx, cancel)
-	unmountWhenDone(ctx, mountpoint)
+	unmountWhenDone(ctx, cfg.MountPoint)
 
 	<-ctx.Done()
 	log.Info("stopping spork...")
@@ -155,11 +153,10 @@ func startSporkServer(ctx context.Context, cancel context.CancelFunc, listenAddr
 	}()
 }
 
-func newSporkConfig(dir string) spork.Config {
-	return spork.Config{
-		InventoryLocation: fmt.Sprintf("%s/%s", dir, "inventory"),
-		DataLocation:      fmt.Sprintf("%s/%s", dir, "data"),
-		CacheLocation:     fmt.Sprintf("%s/%s", dir, "cache"),
-		Peers:             []string{"localhost:8080", "localhost:8081"},
+func parseConfig(dir string) (cfg spork.Config) {
+	_, err := toml.DecodeFile(dir, &cfg)
+	if err != nil {
+		log.Fatalf("decoding config: %s", err)
 	}
+	return
 }

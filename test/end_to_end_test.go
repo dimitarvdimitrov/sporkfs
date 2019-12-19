@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BurntSushi/toml"
+	"github.com/dimitarvdimitrov/sporkfs/raft/index"
+	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/stretchr/testify/suite"
 )
@@ -16,8 +19,9 @@ import (
 type E2eSuite struct {
 	suite.Suite
 
-	mountDir, dataDir, sporkLogsFile string
-	sporkProcess                     *exec.Cmd
+	mountDir, dataDir      string
+	sporkLogsFile, cfgFile string
+	sporkProcess           *exec.Cmd
 }
 
 func (s *E2eSuite) TestCreateEmptyFile() {
@@ -206,7 +210,9 @@ func (s *E2eSuite) SetupSuite() {
 	s.mountDir, err = ioutil.TempDir("", "spork-mount-")
 	s.Require().NoError(err)
 
-	s.sporkProcess = exec.Command("../bin/sporkfs", s.mountDir, s.dataDir)
+	s.cfgFile = s.writeCfg(s.mountDir, s.dataDir)
+
+	s.sporkProcess = exec.Command("../bin/sporkfs", s.cfgFile)
 
 	output, err := ioutil.TempFile("/tmp", "logs-*")
 	s.Require().NoError(err)
@@ -217,22 +223,42 @@ func (s *E2eSuite) SetupSuite() {
 	time.Sleep(time.Second)
 }
 
+func (s *E2eSuite) writeCfg(mountPoint, dataDir string) string {
+	cfg := spork.Config{
+		DataDir:    dataDir,
+		MountPoint: mountPoint,
+		Peers: index.Config{
+			Redundancy: 1,
+			AllPeers:   []string{"localhost:8080"},
+			ThisPeer:   "localhost:8080",
+		},
+	}
+	f, err := ioutil.TempFile("", "")
+	s.Require().NoError(err)
+	defer f.Close()
+
+	err = toml.NewEncoder(f).Encode(cfg)
+	s.Require().NoError(err)
+	return f.Name()
+}
+
 func (s *E2eSuite) TearDownSuite() {
-	s.NoError(exec.Command("fusermount", "-u", s.mountDir).Run())
-
-	state, err := s.sporkProcess.Process.Wait()
-	s.NoError(err)
-	s.True(state.Success())
-
 	outBytes, err := ioutil.ReadFile(s.sporkLogsFile)
 	out := string(outBytes)
 	s.NoError(err)
 	s.T().Log(out)
 	s.True(strings.Count(out, "\n") > 100) // to make sure it actually ran
 
+	s.NoError(exec.Command("fusermount", "-u", s.mountDir).Run())
+
+	state, err := s.sporkProcess.Process.Wait()
+	s.NoError(err)
+	s.True(state.Success())
+
 	s.NoError(os.RemoveAll(s.dataDir))
 	s.NoError(os.RemoveAll(s.mountDir))
 	s.NoError(os.Remove(s.sporkLogsFile))
+	s.NoError(os.Remove(s.cfgFile))
 }
 
 func TestE2e(t *testing.T) {
