@@ -3,29 +3,33 @@ package main
 import (
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/dimitarvdimitrov/sporkfs/fuse"
+	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft/index"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
+	"github.com/dimitarvdimitrov/sporkfs/store/data"
+	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
+	"github.com/dimitarvdimitrov/sporkfs/store/remote"
+	"github.com/seaweedfs/fuse/fs"
+	"github.com/seaweedfs/fuse/fs/fstestutil"
 	"github.com/stretchr/testify/suite"
 )
 
 type E2eSuite struct {
 	suite.Suite
 
-	mountDir, dataDir      string
-	sporkLogsFile, cfgFile string
-	sporkProcess           *exec.Cmd
+	spork.Config
+	cfgFile       string
+	sporkInstance *fstestutil.Mount
 }
 
 func (s *E2eSuite) TestCreateEmptyFile() {
-	tmpFile, err := ioutil.TempFile(s.mountDir, "empty-file-")
+	tmpFile, err := ioutil.TempFile(s.MountPoint, "empty-file-")
 	s.NoError(err)
 	defer func() {
 		s.NoError(tmpFile.Close())
@@ -36,7 +40,7 @@ func (s *E2eSuite) TestCreateEmptyFile() {
 }
 
 func (s *E2eSuite) TestFsync() {
-	tmpFile, err := ioutil.TempFile(s.mountDir, "non-empty-file-")
+	tmpFile, err := ioutil.TempFile(s.MountPoint, "non-empty-file-")
 	s.NoError(err)
 	defer func() {
 		s.NoError(tmpFile.Close())
@@ -56,7 +60,7 @@ func (s *E2eSuite) TestFsync() {
 }
 
 func (s *E2eSuite) TestAppendToFile() {
-	tmpFile, err := ioutil.TempFile(s.mountDir, "file-to-append-to-")
+	tmpFile, err := ioutil.TempFile(s.MountPoint, "file-to-append-to-")
 	s.NoError(err)
 	defer func() {
 		s.NoError(os.Remove(tmpFile.Name()))
@@ -85,7 +89,7 @@ func (s *E2eSuite) TestAppendToFile() {
 }
 
 func (s *E2eSuite) TestCreateEmptyDir() {
-	tmpDir, err := ioutil.TempDir(s.mountDir, "empty-dir-")
+	tmpDir, err := ioutil.TempDir(s.MountPoint, "empty-dir-")
 	s.NoError(err)
 	defer func() {
 		s.NoError(os.RemoveAll(tmpDir))
@@ -95,7 +99,7 @@ func (s *E2eSuite) TestCreateEmptyDir() {
 }
 
 func (s *E2eSuite) TestCreateDirWithFiles() {
-	tmpDir, err := ioutil.TempDir(s.mountDir, "non-empty-dir-")
+	tmpDir, err := ioutil.TempDir(s.MountPoint, "non-empty-dir-")
 	s.NoError(err)
 	defer func() {
 		s.NoError(os.RemoveAll(tmpDir))
@@ -111,7 +115,7 @@ func (s *E2eSuite) TestCreateDirWithFiles() {
 }
 
 func (s *E2eSuite) TestRenameFile() {
-	tmpFile, err := ioutil.TempFile(s.mountDir, "name-1")
+	tmpFile, err := ioutil.TempFile(s.MountPoint, "name-1")
 	s.NoError(err)
 	s.NoError(tmpFile.Close())
 
@@ -130,13 +134,13 @@ func (s *E2eSuite) TestRenameFile() {
 
 func (s *E2eSuite) TestMoveFile() {
 	// setup
-	firstParent, err := ioutil.TempDir(s.mountDir, "")
+	firstParent, err := ioutil.TempDir(s.MountPoint, "")
 	s.NoError(err)
 	defer func() {
 		s.NoError(os.RemoveAll(firstParent))
 	}()
 
-	secondParent, err := ioutil.TempDir(s.mountDir, "")
+	secondParent, err := ioutil.TempDir(s.MountPoint, "")
 	s.NoError(err)
 	defer func() {
 		s.NoError(os.RemoveAll(secondParent))
@@ -170,7 +174,7 @@ func (s *E2eSuite) TestMoveFile() {
 
 func (s *E2eSuite) TestRenameDir() {
 	// setup
-	testDir, err := ioutil.TempDir(s.mountDir, "")
+	testDir, err := ioutil.TempDir(s.MountPoint, "")
 	s.NoError(err)
 
 	tmpFile, err := ioutil.TempFile(testDir, "")
@@ -200,35 +204,64 @@ func (s *E2eSuite) TestRenameDir() {
 }
 
 func (s *E2eSuite) SetupSuite() {
-	var err error
-	s.dataDir, err = ioutil.TempDir("", "spork-data-")
+	s.SetupConfig()
+
+	peers := index.NewPeerList(s.Peers)
+
+	dataStorage, err := data.NewLocalDriver(s.DataDir + "/data")
+	if err != nil {
+		log.Fatalf("init data driver: %s", err)
+	}
+	cacheStorage, err := data.NewLocalDriver(s.DataDir + "/cache")
+	if err != nil {
+		log.Fatalf("init data driver: %s", err)
+	}
+
+	inv, err := inventory.NewDriver(s.DataDir + "/inventory")
+	if err != nil {
+		log.Fatalf("init inventory: %s", err)
+	}
+
+	fetcher, err := remote.NewFetcher(peers)
+	if err != nil {
+		log.Fatalf("init fetcher: %s", err)
+	}
+
+	invNodes := make(chan fs.Node)
+	invFiles := make(chan *store.File)
+
+	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
+	vfs := fuse.NewFS(&sporkService, invFiles, invNodes)
+
+	m, err := fstestutil.MountedT(s.T(), vfs, &fs.Config{
+		Debug: func(msg interface{}) {
+			log.Debug(msg)
+		},
+	})
 	s.Require().NoError(err)
-
-	err = os.Mkdir(s.dataDir+"/data", 0777)
-	s.Require().NoError(err)
-
-	s.mountDir, err = ioutil.TempDir("", "spork-mount-")
-	s.Require().NoError(err)
-
-	s.cfgFile = s.writeCfg(s.mountDir, s.dataDir)
-
-	s.sporkProcess = exec.Command("../bin/sporkfs", s.cfgFile)
-
-	output, err := ioutil.TempFile("/tmp", "logs-*")
-	s.Require().NoError(err)
-	s.sporkProcess.Stderr = output
-	s.sporkProcess.Stdout = output
-	s.sporkLogsFile = output.Name()
-	s.Require().NoError(s.sporkProcess.Start())
-	time.Sleep(time.Second)
+	s.sporkInstance = m
+	s.MountPoint = m.Dir
 }
 
-func (s *E2eSuite) writeCfg(mountPoint, dataDir string) string {
-	cfg := spork.Config{
-		DataDir:    dataDir,
-		MountPoint: mountPoint,
+func (s *E2eSuite) SetupConfig() {
+	var err error
+	s.DataDir, err = ioutil.TempDir("", "spork-data-")
+	s.Require().NoError(err)
+
+	err = os.Mkdir(s.DataDir+"/data", 0777)
+	s.Require().NoError(err)
+
+	s.MountPoint, err = ioutil.TempDir("", "spork-mount-")
+	s.Require().NoError(err)
+
+	s.writeCfg(s.DataDir)
+}
+
+func (s *E2eSuite) writeCfg(dataDir string) {
+	s.Config = spork.Config{
+		DataDir: dataDir,
 		Peers: index.Config{
-			Redundancy: 1,
+			Redundancy: 0,
 			AllPeers:   []string{"localhost:8080"},
 			ThisPeer:   "localhost:8080",
 		},
@@ -237,27 +270,16 @@ func (s *E2eSuite) writeCfg(mountPoint, dataDir string) string {
 	s.Require().NoError(err)
 	defer f.Close()
 
-	err = toml.NewEncoder(f).Encode(cfg)
+	err = toml.NewEncoder(f).Encode(s.Config)
 	s.Require().NoError(err)
-	return f.Name()
+	s.cfgFile = f.Name()
 }
 
 func (s *E2eSuite) TearDownSuite() {
-	outBytes, err := ioutil.ReadFile(s.sporkLogsFile)
-	out := string(outBytes)
-	s.NoError(err)
-	s.T().Log(out)
-	s.True(strings.Count(out, "\n") > 100) // to make sure it actually ran
+	s.sporkInstance.Close()
 
-	s.NoError(exec.Command("fusermount", "-u", s.mountDir).Run())
-
-	state, err := s.sporkProcess.Process.Wait()
-	s.NoError(err)
-	s.True(state.Success())
-
-	s.NoError(os.RemoveAll(s.dataDir))
-	s.NoError(os.RemoveAll(s.mountDir))
-	s.NoError(os.Remove(s.sporkLogsFile))
+	s.NoError(os.RemoveAll(s.DataDir))
+	s.NoError(os.RemoveAll(s.MountPoint))
 	s.NoError(os.Remove(s.cfgFile))
 }
 
