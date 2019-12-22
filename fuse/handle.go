@@ -53,11 +53,11 @@ func (h handle) run() {
 
 func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	data := make([]byte, req.Size)
-	_, err := h.r.ReadAt(data, req.Offset)
+	n, err := h.r.ReadAt(data, req.Offset)
 	if err != nil && err != io.EOF {
 		return parseError(err)
 	}
-	resp.Data = data
+	resp.Data = data[:n]
 	return nil
 }
 

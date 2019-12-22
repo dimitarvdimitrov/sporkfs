@@ -8,10 +8,10 @@ all: test
 
 .PHONY: test
 test: build
-	$(GOFLAGS) go test -timeout 10s ./...
+	$(GOFLAGS) go test -race -timeout 10s ./...
 
 build:
-	$(GOFLAGS) go build -o $(BINDIR) $(MAIN)
+	$(GOFLAGS) go build -race -o $(BINDIR) $(MAIN)
 
 run: build force-unmount
 	$(BINDIR) $(MOUNTPOINT) $(DATADIR)

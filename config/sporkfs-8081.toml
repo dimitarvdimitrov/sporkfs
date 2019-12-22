@@ -1,4 +1,4 @@
-mount_dir = "/mnt/sporkfs-81"
+mount_point = "/mnt/sporkfs-81"
 data_dir = "/opt/spork/storage-81"
 redundancy = 1
 

@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"context"
 	"syscall"
 
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -12,16 +13,13 @@ import (
 type Fs struct {
 	S            *spork.Spork
 	invalidFiles <-chan *store.File
-	invalidNode  chan<- fs.Node
 }
 
-func NewFS(s *spork.Spork, files <-chan *store.File, nodes chan<- fs.Node) Fs {
+func NewFS(s *spork.Spork, files <-chan *store.File) Fs {
 	f := Fs{
 		S:            s,
 		invalidFiles: files,
-		invalidNode:  nodes,
 	}
-	go f.watchInvalidations()
 	return f
 }
 
@@ -33,14 +31,19 @@ func (f Fs) Destroy() {
 	f.S.Close()
 }
 
-func (f Fs) watchInvalidations() {
+func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
 	for {
-		file, ok := <-f.invalidFiles
-		if !ok {
-			close(f.invalidNode)
-			break
+		select {
+		case file, ok := <-f.invalidFiles:
+			if !ok {
+				return
+			}
+			n := newNode(file, f.S)
+			_ = server.InvalidateNodeAttr(n)
+			_ = server.InvalidateNodeData(n)
+		case <-ctx.Done():
+			return
 		}
-		f.invalidNode <- newNode(file, f.S)
 	}
 }
 

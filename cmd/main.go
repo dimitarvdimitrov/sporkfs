@@ -53,13 +53,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("init fetcher: %s", err)
 	}
-	invNodes := make(chan fs.Node)
 	invFiles := make(chan *store.File)
 
 	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
-	vfs := sfuse.NewFS(&sporkService, invFiles, invNodes)
+	vfs := sfuse.NewFS(&sporkService, invFiles)
 
-	startFuseServer(ctx, cancel, cfg.MountPoint, vfs, invNodes)
+	startFuseServer(ctx, cancel, cfg.MountPoint, vfs)
 	defer vfs.Destroy()
 	startSporkServer(ctx, cancel, cfg.Peers.ThisPeer, dataStorage)
 	handleOsSignals(ctx, cancel)
@@ -92,7 +91,7 @@ func unmountWhenDone(ctx context.Context, mountpoint string) {
 	}()
 }
 
-func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint string, vfs sfuse.Fs, invalidations <-chan fs.Node) {
+func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint string, vfs sfuse.Fs) {
 	log.Infof("mounting sporkfs at %s...", mountpoint)
 	fuseConn, err := fuse.Mount(mountpoint,
 		fuse.FSName("sporkfs"),
@@ -115,20 +114,7 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 		cancel()
 	}()
 
-	go func() {
-		for {
-			select {
-			case n, ok := <-invalidations:
-				if !ok {
-					return
-				}
-				_ = fuseServer.InvalidateNodeAttr(n)
-				_ = fuseServer.InvalidateNodeData(n)
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go vfs.WatchInvalidations(ctx, fuseServer)
 }
 
 func startSporkServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, s data.Driver) {

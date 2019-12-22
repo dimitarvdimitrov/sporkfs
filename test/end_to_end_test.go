@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/dimitarvdimitrov/sporkfs/fuse"
@@ -39,26 +41,6 @@ func (s *E2eSuite) TestCreateEmptyFile() {
 	s.FileExists(tmpFile.Name())
 }
 
-func (s *E2eSuite) TestFsync() {
-	tmpFile, err := ioutil.TempFile(s.MountPoint, "non-empty-file-")
-	s.NoError(err)
-	defer func() {
-		s.NoError(tmpFile.Close())
-		s.NoError(os.Remove(tmpFile.Name()))
-	}()
-
-	contentToWrite := []byte("this is a test")
-	bytesWritten, err := tmpFile.Write(contentToWrite)
-	s.NoError(err)
-	s.Equal(len(contentToWrite), bytesWritten)
-
-	s.NoError(tmpFile.Sync())
-
-	contentFound, err := ioutil.ReadFile(tmpFile.Name())
-	s.NoError(err)
-	s.Equal(contentToWrite, contentFound)
-}
-
 func (s *E2eSuite) TestAppendToFile() {
 	tmpFile, err := ioutil.TempFile(s.MountPoint, "file-to-append-to-")
 	s.NoError(err)
@@ -72,16 +54,15 @@ func (s *E2eSuite) TestAppendToFile() {
 	s.Equal(len(contentToWrite), bytesWritten)
 	tmpFile.Close()
 
-	f, err := os.OpenFile(tmpFile.Name(), os.O_APPEND|os.O_RDWR, store.ModeRegularFile)
+	f, err := os.OpenFile(tmpFile.Name(), os.O_APPEND|os.O_WRONLY|os.O_SYNC, store.ModeRegularFile)
 	s.NoError(err)
-	defer func() {
-		s.NoError(f.Close())
-	}()
+
 	contentToAppend := []byte("\nappended text")
 	bytesWritten, err = f.Write(contentToAppend)
 	s.NoError(err)
 	s.Equal(len(contentToAppend), bytesWritten)
-	s.NoError(f.Sync())
+	s.NoError(f.Close())
+	time.Sleep(time.Millisecond * 10)
 
 	contentFound, err := ioutil.ReadFile(tmpFile.Name())
 	s.NoError(err)
@@ -227,11 +208,10 @@ func (s *E2eSuite) SetupSuite() {
 		log.Fatalf("init fetcher: %s", err)
 	}
 
-	invNodes := make(chan fs.Node)
 	invFiles := make(chan *store.File)
 
 	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
-	vfs := fuse.NewFS(&sporkService, invFiles, invNodes)
+	vfs := fuse.NewFS(&sporkService, invFiles)
 
 	m, err := fstestutil.MountedT(s.T(), vfs, &fs.Config{
 		Debug: func(msg interface{}) {
@@ -241,11 +221,12 @@ func (s *E2eSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.sporkInstance = m
 	s.MountPoint = m.Dir
+	go vfs.WatchInvalidations(context.Background(), m.Server)
 }
 
 func (s *E2eSuite) SetupConfig() {
 	var err error
-	s.DataDir, err = ioutil.TempDir("", "spork-data-")
+	s.DataDir, err = ioutil.TempDir("/opt/spork/test/", "spork-data-")
 	s.Require().NoError(err)
 
 	err = os.Mkdir(s.DataDir+"/data", 0777)
@@ -261,7 +242,7 @@ func (s *E2eSuite) writeCfg(dataDir string) {
 	s.Config = spork.Config{
 		DataDir: dataDir,
 		Peers: index.Config{
-			Redundancy: 0,
+			Redundancy: 1,
 			AllPeers:   []string{"localhost:8080"},
 			ThisPeer:   "localhost:8080",
 		},
