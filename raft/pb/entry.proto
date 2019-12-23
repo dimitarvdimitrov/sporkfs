@@ -1,5 +1,5 @@
 syntax = "proto3";
-package raft;
+package raftpb;
 
 message Change {
     // id of the file that was changed
@@ -30,7 +30,7 @@ message Delete {
     uint64 parent_id = 2;
 }
 
-message RaftEntry {
+message Entry {
    oneof message {
        Change c = 1;
        Rename r = 2;

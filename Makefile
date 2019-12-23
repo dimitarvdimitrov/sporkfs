@@ -21,4 +21,4 @@ force-unmount:
 
 protos:
 	protoc -I api/pb api/pb/sporkserver.proto --go_out=plugins=grpc:api/pb
-	protoc -I raft raft/entry.proto --go_out=plugins=grpc:raft
+	protoc -I raft raft/pb/*.proto --go_out=plugins=grpc:raft
