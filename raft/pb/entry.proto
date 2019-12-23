@@ -29,11 +29,3 @@ message Delete {
     // id of the file's parent
     uint64 parent_id = 2;
 }
-
-message Entry {
-   oneof message {
-       Change c = 1;
-       Rename r = 2;
-       Delete d = 3;
-   }
-}

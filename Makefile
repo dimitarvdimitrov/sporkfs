@@ -19,6 +19,9 @@ run: build force-unmount
 force-unmount:
 	fusermount -u $(MOUNTPOINT) || echo ''
 
+proto-deps:
+	./proto-deps.sh
+
 protos:
 	protoc -I api/pb api/pb/sporkserver.proto --go_out=plugins=grpc:api/pb
-	protoc -I raft raft/pb/*.proto --go_out=plugins=grpc:raft
+	protoc -I raft raft/pb/*.proto -I third_party/ --go_out=plugins=grpc,Metcd/raftpb/raft.proto=github.com/coreos/etcd/raft/raftpb:raft

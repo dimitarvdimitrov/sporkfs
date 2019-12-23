@@ -4,6 +4,8 @@ go 1.13
 
 require (
 	github.com/BurntSushi/toml v0.3.1
+	github.com/coreos/etcd v3.3.18+incompatible
+	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v1.1.1
 	github.com/minio/highwayhash v1.0.0
@@ -17,5 +19,5 @@ require (
 	golang.org/x/sys v0.0.0-20191128015809-6d18c012aee9 // indirect
 	golang.org/x/text v0.3.2 // indirect
 	google.golang.org/genproto v0.0.0-20191115221424-83cc0476cb11 // indirect
-	google.golang.org/grpc v1.25.1
+	google.golang.org/grpc v1.26.0
 )
