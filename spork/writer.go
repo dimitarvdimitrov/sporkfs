@@ -33,18 +33,11 @@ type writer struct {
 
 func (w *writer) Flush() {
 	w.w.Flush()
-	w.invalidate <- w.f // TODO maybe remove this this?
 }
 
 func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
 	w.f.Lock()
 	defer w.f.Unlock()
-	defer func() {
-		w.f.Size += int64(len(p))
-		w.f.Mtime = time.Now()
-		w.f.Atime = time.Now()
-		w.invalidate <- w.f // TODO maybe remove this this?
-	}()
 
 	return w.w.WriteAt(p, off)
 }
@@ -52,12 +45,6 @@ func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
 func (w *writer) Write(p []byte) (int, error) {
 	w.f.Lock()
 	defer w.f.Unlock()
-	defer func() {
-		w.f.Size += int64(len(p))
-		w.f.Mtime = time.Now()
-		w.f.Atime = time.Now()
-		w.invalidate <- w.f // TODO maybe remove this this?
-	}()
 
 	return w.w.Write(p)
 }
@@ -65,6 +52,10 @@ func (w *writer) Write(p []byte) (int, error) {
 func (w *writer) Close() error {
 	w.f.Hash = w.w.Close()
 	w.f.Size = w.fileSizer.Size(w.f.Id, w.f.Hash)
+
+	now := time.Now()
+	w.f.Mtime, w.f.Atime = now, now
+
 	w.invalidate <- w.f // TODO maybe remove this this?
 	return nil
 }
