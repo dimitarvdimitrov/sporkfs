@@ -1,0 +1,10 @@
+syntax = "proto3";
+option go_package = "raftpb";
+
+import "pb/entry.proto";
+
+message Empty {}
+
+service Raft {
+    rpc Step(Entry) returns (Empty) {};
+}

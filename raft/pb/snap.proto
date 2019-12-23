@@ -1,5 +1,5 @@
 syntax = "proto3";
-package raftpb;
+option go_package = "raftpb";
 
 message File {
     uint64 id = 1;

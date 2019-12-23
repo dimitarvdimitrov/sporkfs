@@ -1,5 +1,5 @@
 syntax = "proto3";
-package raftpb;
+option go_package = "raftpb";
 
 message Change {
     // id of the file that was changed
