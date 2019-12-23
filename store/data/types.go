@@ -13,7 +13,6 @@ type Driver interface {
 
 	Add(id uint64, mode store.FileMode) (version uint64, err error)
 	Contains(id, version uint64) bool
-	PruneVersionsExcept(id, version uint64)
 	Remove(id, version uint64)
 	Size(id, version uint64) int64
 	Sync()

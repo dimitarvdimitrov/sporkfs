@@ -106,21 +106,6 @@ func (d *localDriver) Contains(id, hash uint64) bool {
 	return exists
 }
 
-// TODO remove
-func (d *localDriver) PruneVersionsExcept(id, hash uint64) {
-	hashToPrune := make([]uint64, 0, len(d.index[id]))
-	for v := range d.index[id] {
-		if v == hash {
-			continue
-		}
-		hashToPrune = append(hashToPrune, v)
-	}
-
-	for _, v := range hashToPrune {
-		d.Remove(id, v)
-	}
-}
-
 func (d *localDriver) Remove(id, hash uint64) {
 	if !d.Contains(id, hash) {
 		return
@@ -185,10 +170,6 @@ func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
 		flags |= os.O_TRUNC
 	}
 
-	// TODO remove this - shouldnt be needed
-	if flags&os.O_CREATE != 0 { // we've already duplicated the file, it's already created
-		flags ^= os.O_CREATE
-	}
 	flags |= os.O_RDWR
 
 	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
@@ -220,11 +201,6 @@ func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 
 	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
 		flags |= os.O_TRUNC
-	}
-
-	// TODO remove this - shouldnt be needed
-	if flags&os.O_CREATE != 0 { // we've already duplicated the file, it's already created
-		flags ^= os.O_CREATE
 	}
 
 	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
