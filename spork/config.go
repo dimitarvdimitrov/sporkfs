@@ -1,9 +1,9 @@
 package spork
 
-import "github.com/dimitarvdimitrov/sporkfs/raft/index"
+import "github.com/dimitarvdimitrov/sporkfs/raft"
 
 type Config struct {
-	DataDir    string       `toml:"data_dir"`
-	MountPoint string       `toml:"mount_point"`
-	Peers      index.Config `toml:"peers"`
+	DataDir    string      `toml:"data_dir"`
+	MountPoint string      `toml:"mount_point"`
+	Peers      raft.Config `toml:"peers"`
 }

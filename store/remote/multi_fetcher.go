@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dimitarvdimitrov/sporkfs/raft/index"
+	"github.com/dimitarvdimitrov/sporkfs/raft"
 )
 
 type multiFetcher struct {
-	peers    *index.Peers
+	peers    *raft.Peers
 	fetchers map[string]grpcFetcher
 }
 
-func NewFetcher(peers *index.Peers) (Readerer, error) {
+func NewFetcher(peers *raft.Peers) (Readerer, error) {
 	peerConns := make(map[string]grpcFetcher, peers.Len())
 
 	err := peers.ForEach(func(peer string) error {

@@ -6,8 +6,7 @@ import (
 	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
-
-	"github.com/dimitarvdimitrov/sporkfs/raft/index"
+	"github.com/dimitarvdimitrov/sporkfs/raft"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
@@ -19,11 +18,11 @@ type Spork struct {
 	data, cache data.Driver
 	fetcher     remote.Readerer
 
-	peers   *index.Peers
+	peers   *raft.Peers
 	invalid chan<- *store.File
 }
 
-func New(data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *index.Peers, invalid chan<- *store.File) Spork {
+func New(data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *raft.Peers, invalid chan<- *store.File) Spork {
 	return Spork{
 		inventory: inv,
 		data:      data,

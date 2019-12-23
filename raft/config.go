@@ -1,4 +1,4 @@
-package index
+package raft
 
 type Config struct {
 	AllPeers   []string `toml:"all_peers"`

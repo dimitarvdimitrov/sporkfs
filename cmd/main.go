@@ -12,7 +12,7 @@ import (
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
-	"github.com/dimitarvdimitrov/sporkfs/raft/index"
+	"github.com/dimitarvdimitrov/sporkfs/raft"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
@@ -33,7 +33,7 @@ func main() {
 	cfg := parseConfig(cfgLocation)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	peers := index.NewPeerList(cfg.Peers)
+	peers := raft.NewPeerList(cfg.Peers)
 
 	dataStorage, err := data.NewLocalDriver(cfg.DataDir + "/data")
 	if err != nil {

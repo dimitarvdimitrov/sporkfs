@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
-	"github.com/dimitarvdimitrov/sporkfs/raft/index"
+	"github.com/dimitarvdimitrov/sporkfs/raft"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
@@ -187,7 +187,7 @@ func (s *E2eSuite) TestRenameDir() {
 func (s *E2eSuite) SetupSuite() {
 	s.SetupConfig()
 
-	peers := index.NewPeerList(s.Peers)
+	peers := raft.NewPeerList(s.Peers)
 
 	dataStorage, err := data.NewLocalDriver(s.DataDir + "/data")
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *E2eSuite) SetupConfig() {
 func (s *E2eSuite) writeCfg(dataDir string) {
 	s.Config = spork.Config{
 		DataDir: dataDir,
-		Peers: index.Config{
+		Peers: raft.Config{
 			Redundancy: 1,
 			AllPeers:   []string{"localhost:8080"},
 			ThisPeer:   "localhost:8080",

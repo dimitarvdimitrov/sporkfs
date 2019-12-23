@@ -1,6 +1,5 @@
-package index
+package raft
 
-// TODO move this pkg one level up and rename to raft
 import "sort"
 
 var (
