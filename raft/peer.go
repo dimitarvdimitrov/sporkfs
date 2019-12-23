@@ -80,3 +80,10 @@ func (p Peers) IsLocalFile(id uint64) bool {
 	}
 	return false
 }
+
+func (p Peers) get(id int) string {
+	if id >= p.Len() || id < 0 {
+		return ""
+	}
+	return p.p[id]
+}

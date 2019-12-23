@@ -63,14 +63,14 @@ func init() {
 func init() { proto.RegisterFile("pb/raft.proto", fileDescriptor_72e83c28469e72c9) }
 
 var fileDescriptor_72e83c28469e72c9 = []byte{
-	// 103 bytes of a gzipped FileDescriptorProto
+	// 105 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x2d, 0x48, 0xd2, 0x2f,
 	0x4a, 0x4c, 0x2b, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x97, 0x12, 0x4b, 0x2d, 0x49, 0x4e, 0x01,
-	0x0b, 0xa0, 0x88, 0x2b, 0xb1, 0x73, 0xb1, 0xba, 0xe6, 0x16, 0x94, 0x54, 0x1a, 0xa9, 0x73, 0xb1,
-	0x04, 0x25, 0xa6, 0x95, 0x08, 0xc9, 0x73, 0xb1, 0x04, 0x97, 0xa4, 0x16, 0x08, 0xf1, 0xea, 0x41,
-	0x14, 0xeb, 0xb9, 0xe6, 0x95, 0x14, 0x55, 0x4a, 0xb1, 0xe9, 0x81, 0x95, 0x29, 0x31, 0x38, 0x71,
-	0x44, 0xb1, 0x41, 0x64, 0x92, 0xd8, 0xc0, 0x46, 0x18, 0x03, 0x02, 0x00, 0x00, 0xff, 0xff, 0x98,
-	0x5e, 0x47, 0x2e, 0x6b, 0x00, 0x00, 0x00,
+	0x0b, 0xa0, 0x88, 0x2b, 0xb1, 0x73, 0xb1, 0xba, 0xe6, 0x16, 0x94, 0x54, 0x1a, 0x69, 0x72, 0xb1,
+	0x04, 0x25, 0xa6, 0x95, 0x08, 0x29, 0x72, 0xb1, 0x04, 0x97, 0xa4, 0x16, 0x08, 0xf1, 0xeb, 0x41,
+	0x14, 0xeb, 0xf9, 0xa6, 0x16, 0x17, 0x27, 0xa6, 0xa7, 0x4a, 0xb1, 0xe9, 0x81, 0x15, 0x2a, 0x31,
+	0x38, 0x71, 0x44, 0xb1, 0x41, 0xe4, 0x92, 0xd8, 0xc0, 0x86, 0x18, 0x03, 0x02, 0x00, 0x00, 0xff,
+	0xff, 0xa6, 0xc8, 0xc4, 0xbc, 0x6d, 0x00, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -85,7 +85,7 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type RaftClient interface {
-	Step(ctx context.Context, in *raftpb.Entry, opts ...grpc.CallOption) (*Empty, error)
+	Step(ctx context.Context, in *raftpb.Message, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type raftClient struct {
@@ -96,7 +96,7 @@ func NewRaftClient(cc *grpc.ClientConn) RaftClient {
 	return &raftClient{cc}
 }
 
-func (c *raftClient) Step(ctx context.Context, in *raftpb.Entry, opts ...grpc.CallOption) (*Empty, error) {
+func (c *raftClient) Step(ctx context.Context, in *raftpb.Message, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/Raft/Step", in, out, opts...)
 	if err != nil {
@@ -107,14 +107,14 @@ func (c *raftClient) Step(ctx context.Context, in *raftpb.Entry, opts ...grpc.Ca
 
 // RaftServer is the server API for Raft service.
 type RaftServer interface {
-	Step(context.Context, *raftpb.Entry) (*Empty, error)
+	Step(context.Context, *raftpb.Message) (*Empty, error)
 }
 
 // UnimplementedRaftServer can be embedded to have forward compatible implementations.
 type UnimplementedRaftServer struct {
 }
 
-func (*UnimplementedRaftServer) Step(ctx context.Context, req *raftpb.Entry) (*Empty, error) {
+func (*UnimplementedRaftServer) Step(ctx context.Context, req *raftpb.Message) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Step not implemented")
 }
 
@@ -123,7 +123,7 @@ func RegisterRaftServer(s *grpc.Server, srv RaftServer) {
 }
 
 func _Raft_Step_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(raftpb.Entry)
+	in := new(raftpb.Message)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func _Raft_Step_Handler(srv interface{}, ctx context.Context, dec func(interface
 		FullMethod: "/Raft/Step",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RaftServer).Step(ctx, req.(*raftpb.Entry))
+		return srv.(RaftServer).Step(ctx, req.(*raftpb.Message))
 	}
 	return interceptor(ctx, in, info, handler)
 }

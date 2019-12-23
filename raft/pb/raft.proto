@@ -6,5 +6,5 @@ import "etcd/raftpb/raft.proto";
 message Empty {}
 
 service Raft {
-    rpc Step(raftpb.Entry) returns (Empty) {};
+    rpc Step(raftpb.Message) returns (Empty) {};
 }

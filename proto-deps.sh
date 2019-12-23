@@ -5,7 +5,7 @@ mkdir -p third_party/gogoproto
 
 tmp_dir=$(mktemp -d)
 
-git clone --quiet --depth 1 https://github.com/gogo/protobuf.git $tmp_dir
+git clone --depth 1 --branch v1.3.1 --quiet https://github.com/gogo/protobuf.git $tmp_dir
 cp $tmp_dir/gogoproto/*.proto third_party/gogoproto/
 cp `go env GOPATH`/pkg/mod/github.com/coreos/etcd*/raft/raftpb/*.proto third_party/etcd/raftpb/
 

@@ -1,6 +1,7 @@
 package spork
 
 import (
+	"context"
 	"io"
 	"os"
 	"sync"
@@ -19,16 +20,18 @@ type Spork struct {
 	fetcher     remote.Readerer
 
 	peers   *raft.Peers
+	node    *raft.Node
 	invalid chan<- *store.File
 }
 
-func New(data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *raft.Peers, invalid chan<- *store.File) Spork {
+func New(ctx context.Context, data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *raft.Peers, invalid chan<- *store.File) Spork {
 	return Spork{
 		inventory: inv,
 		data:      data,
 		cache:     cache,
 		fetcher:   fetcher,
 		peers:     peers,
+		node:      raft.NewNode(ctx, peers),
 		invalid:   invalid,
 	}
 }

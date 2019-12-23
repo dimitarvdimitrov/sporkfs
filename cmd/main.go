@@ -55,7 +55,7 @@ func main() {
 	}
 	invFiles := make(chan *store.File)
 
-	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
+	sporkService := spork.New(ctx, dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
 	vfs := sfuse.NewFS(&sporkService, invFiles)
 
 	startFuseServer(ctx, cancel, cfg.MountPoint, vfs)

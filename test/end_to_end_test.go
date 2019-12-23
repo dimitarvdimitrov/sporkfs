@@ -26,6 +26,7 @@ type E2eSuite struct {
 	suite.Suite
 
 	spork.Config
+	stop          func()
 	cfgFile       string
 	sporkInstance *fstestutil.Mount
 }
@@ -187,6 +188,9 @@ func (s *E2eSuite) TestRenameDir() {
 func (s *E2eSuite) SetupSuite() {
 	s.SetupConfig()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	s.stop = cancel
+
 	peers := raft.NewPeerList(s.Peers)
 
 	dataStorage, err := data.NewLocalDriver(s.DataDir + "/data")
@@ -210,7 +214,7 @@ func (s *E2eSuite) SetupSuite() {
 
 	invFiles := make(chan *store.File)
 
-	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
+	sporkService := spork.New(ctx, dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
 	vfs := fuse.NewFS(&sporkService, invFiles)
 
 	m, err := fstestutil.MountedT(s.T(), vfs, &fs.Config{
@@ -257,6 +261,7 @@ func (s *E2eSuite) writeCfg(dataDir string) {
 }
 
 func (s *E2eSuite) TearDownSuite() {
+	s.stop()
 	s.sporkInstance.Close()
 
 	s.NoError(os.RemoveAll(s.DataDir))
