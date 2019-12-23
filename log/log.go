@@ -77,3 +77,19 @@ func Fatal(args ...interface{}) {
 func Fatalf(format string, args ...interface{}) {
 	l.Fatalf(format, args...)
 }
+
+type logger struct {
+	*zap.SugaredLogger
+}
+
+func Logger() *logger {
+	return &logger{l}
+}
+
+func (logger *logger) Warning(args ...interface{}) {
+	logger.Warn(args...)
+}
+
+func (logger *logger) Warningf(format string, args ...interface{}) {
+	logger.Warnf(format, args...)
+}
