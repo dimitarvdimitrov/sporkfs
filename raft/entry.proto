@@ -1,0 +1,39 @@
+syntax = "proto3";
+package raft;
+
+message Change {
+    // id of the file that was changed
+    uint64 id = 1;
+    // new hash of the file
+    uint64 hash = 2;
+    // where the change starts (unused for now)
+    uint64 offset = 3;
+    // size of the change
+    uint64 size = 4;
+}
+
+message Rename {
+    // id of the renamed file
+    uint64 id = 1;
+    // the id of the old parent of the file
+    uint64 old_parent_id = 2;
+    // the id of the new parent of the file
+    uint64 new_parent_id = 3;
+    // the new name of the file
+    string new_name = 4;
+}
+
+message Delete {
+    // id of the file to delete
+    uint64 id = 1;
+    // id of the file's parent
+    uint64 parent_id = 2;
+}
+
+message RaftEntry {
+   oneof message {
+       Change c = 1;
+       Rename r = 2;
+       Delete d = 3;
+   }
+}
