@@ -1,6 +1,10 @@
 package raft
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/coreos/etcd/raft"
+)
 
 var (
 	minusOne = -1
@@ -79,6 +83,14 @@ func (p Peers) IsLocalFile(id uint64) bool {
 		}
 	}
 	return false
+}
+
+func (p Peers) raftPeers() []raft.Peer {
+	rp := make([]raft.Peer, p.Len())
+	for i := range p.p {
+		rp[i] = raft.Peer{ID: uint64(i + 1)}
+	}
+	return rp
 }
 
 func (p Peers) get(id int) string {

@@ -8,6 +8,7 @@ import (
 	etcdraftpb "github.com/coreos/etcd/raft/raftpb"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
+	"google.golang.org/grpc"
 )
 
 type Node struct {
@@ -17,10 +18,10 @@ type Node struct {
 	clients map[string]raftpb.RaftClient
 
 	storage *raft.MemoryStorage
-	done    <-chan struct{}
+	done    chan struct{}
 }
 
-func NewNode(ctx context.Context, peers *Peers) *Node {
+func NewNode(peers *Peers) *Node {
 	storage := raft.NewMemoryStorage()
 	config := &raft.Config{
 		ID:              uint64(peers.thisPeer) + 1,
@@ -32,12 +33,16 @@ func NewNode(ctx context.Context, peers *Peers) *Node {
 		Logger:          log.Logger(),
 	}
 
-	raftPeers := make([]raft.Peer, 0, peers.Len()-1)
-	for i := uint64(0); i < uint64(peers.Len()); i++ {
-		if int(i) == peers.thisPeer {
-			continue
-		}
-		raftPeers = append(raftPeers, raft.Peer{ID: i + 1})
+	raftPeers := peers.raftPeers()
+
+	clients := make(map[string]raftpb.RaftClient, peers.Len())
+	err := peers.ForEach(func(peerAddr string) error {
+		cc, err := grpc.Dial(peerAddr, grpc.WithInsecure())
+		clients[peerAddr] = raftpb.NewRaftClient(cc)
+		return err
+	})
+	if err != nil {
+		log.Fatalf("couldn't dial peer: %s", err)
 	}
 
 	raftNode := raft.StartNode(config, raftPeers)
@@ -45,26 +50,25 @@ func NewNode(ctx context.Context, peers *Peers) *Node {
 	node := &Node{
 		raft:    raftNode,
 		storage: storage,
+		clients: clients,
 		peers:   peers,
 		t:       time.NewTicker(time.Millisecond * 100),
-		done:    ctx.Done(),
+		done:    make(chan struct{}),
 	}
 	go node.run()
 	return node
 }
 
 func (s *Node) Step(ctx context.Context, e *etcdraftpb.Message) (*raftpb.Empty, error) {
-	return nil, s.raft.Step(ctx, *e)
+	return &raftpb.Empty{}, s.raft.Step(ctx, *e)
 }
 
 func (s *Node) run() {
 	for {
 		select {
 		case <-s.t.C:
-			log.Debug("tick")
 			s.raft.Tick()
 		case rd := <-s.raft.Ready():
-			log.Debug("ready")
 			s.saveToStorage(rd.HardState, rd.Entries, rd.Snapshot)
 			s.send(rd.Messages)
 			if !raft.IsEmptySnap(rd.Snapshot) {
@@ -126,4 +130,8 @@ func (s *Node) processSnapshot(snapshot etcdraftpb.Snapshot) {
 
 func (s *Node) process(entry etcdraftpb.Entry) {
 	log.Debugf("processing raft entry %#v", entry)
+}
+
+func (s *Node) Close() {
+	close(s.done)
 }

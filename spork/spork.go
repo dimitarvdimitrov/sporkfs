@@ -1,7 +1,6 @@
 package spork
 
 import (
-	"context"
 	"io"
 	"os"
 	"sync"
@@ -24,14 +23,14 @@ type Spork struct {
 	invalid chan<- *store.File
 }
 
-func New(ctx context.Context, data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *raft.Peers, invalid chan<- *store.File) Spork {
+func New(data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *raft.Peers, invalid chan<- *store.File, node *raft.Node) Spork {
 	return Spork{
 		inventory: inv,
 		data:      data,
 		cache:     cache,
 		fetcher:   fetcher,
 		peers:     peers,
-		node:      raft.NewNode(ctx, peers),
+		node:      node,
 		invalid:   invalid,
 	}
 }
@@ -248,4 +247,5 @@ func (s Spork) Delete(file, parent *store.File) error {
 func (s Spork) Close() {
 	s.data.Sync()
 	s.inventory.Sync()
+	s.node.Close()
 }

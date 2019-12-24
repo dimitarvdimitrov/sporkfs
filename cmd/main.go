@@ -13,6 +13,7 @@ import (
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft"
+	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
@@ -53,14 +54,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("init fetcher: %s", err)
 	}
-	invFiles := make(chan *store.File)
+	raftNode := raft.NewNode(peers)
 
-	sporkService := spork.New(ctx, dataStorage, cacheStorage, inv, fetcher, peers, invFiles)
+	invFiles := make(chan *store.File)
+	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles, raftNode)
 	vfs := sfuse.NewFS(&sporkService, invFiles)
 
 	startFuseServer(ctx, cancel, cfg.MountPoint, vfs)
 	defer vfs.Destroy()
-	startSporkServer(ctx, cancel, cfg.Peers.ThisPeer, dataStorage)
+	startGrpcServer(ctx, cancel, cfg.Peers.ThisPeer, dataStorage, raftNode)
 	handleOsSignals(ctx, cancel)
 	unmountWhenDone(ctx, cfg.MountPoint)
 
@@ -117,7 +119,7 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 	go vfs.WatchInvalidations(ctx, fuseServer)
 }
 
-func startSporkServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, s data.Driver) {
+func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data data.Driver, raft *raft.Node) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
@@ -125,7 +127,9 @@ func startSporkServer(ctx context.Context, cancel context.CancelFunc, listenAddr
 	grpcServer := grpc.NewServer()
 
 	reflection.Register(grpcServer)
-	proto.RegisterFileServer(grpcServer, api.NewFileServer(s))
+	proto.RegisterFileServer(grpcServer, api.NewFileServer(data))
+	raftpb.RegisterRaftServer(grpcServer, raft)
+
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Error(err)
