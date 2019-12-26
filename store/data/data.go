@@ -106,6 +106,13 @@ func (d *localDriver) Contains(id, hash uint64) bool {
 	return exists
 }
 
+func (d *localDriver) ContainsAny(id uint64) bool {
+	d.indexM.RLock()
+	defer d.indexM.RUnlock()
+
+	return len(d.index[id]) > 0
+}
+
 func (d *localDriver) Remove(id, hash uint64) {
 	if !d.Contains(id, hash) {
 		return
