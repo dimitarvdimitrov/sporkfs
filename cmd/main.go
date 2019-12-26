@@ -34,7 +34,7 @@ func main() {
 	cfg := parseConfig(cfgLocation)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	peers := raft.NewPeerList(cfg.Peers)
+	peers := raft.NewPeerList(cfg.Raft)
 
 	dataStorage, err := data.NewLocalDriver(cfg.DataDir + "/data")
 	if err != nil {

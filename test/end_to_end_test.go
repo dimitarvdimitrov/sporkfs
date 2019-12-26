@@ -191,7 +191,7 @@ func (s *E2eSuite) SetupSuite() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.stop = cancel
 
-	peers := raft.NewPeerList(s.Peers)
+	peers := raft.NewPeerList(s.Raft)
 
 	dataStorage, err := data.NewLocalDriver(s.DataDir + "/data")
 	if err != nil {
@@ -245,7 +245,7 @@ func (s *E2eSuite) SetupConfig() {
 func (s *E2eSuite) writeCfg(dataDir string) {
 	s.Config = spork.Config{
 		DataDir: dataDir,
-		Peers: raft.Config{
+		Raft: raft.Config{
 			Redundancy: 1,
 			AllPeers:   []string{"localhost:8080"},
 			ThisPeer:   "localhost:8080",

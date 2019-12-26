@@ -1,7 +1,7 @@
 mount_point = "/mnt/sporkfs-80"
 data_dir = "/opt/spork/storage-80"
-redundancy = 1
 
-[peers]
-all_peers = ["localhost:8082", "localhost:8081", "localhost:8080"]
+[raft]
+redundancy = 2
+all_peers = ["localhost:8081", "localhost:8080"]
 this_peer = "localhost:8080"
