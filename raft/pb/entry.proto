@@ -9,7 +9,7 @@ message Change {
     // where the change starts (unused for now)
     uint64 offset = 3;
     // size of the change
-    uint64 size = 4;
+    int64 size = 4;
 }
 
 message Rename {
@@ -28,4 +28,25 @@ message Delete {
     uint64 id = 1;
     // id of the file's parent
     uint64 parent_id = 2;
+}
+
+message Add {
+    // id of file to add
+    uint64 id = 1;
+    // id of parent file
+    uint64 parent_id = 2;
+    // file name
+    string name = 3;
+    // file mode (store.FileMode)
+    uint32 mode = 4;
+}
+
+message Entry {
+    uint64 id = 1;
+    oneof message {
+        Rename rename = 2;
+        Delete delete = 3;
+        Change change = 4;
+        Add add = 5;
+    }
 }
