@@ -54,15 +54,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("init fetcher: %s", err)
 	}
-	raftNode := raft.NewNode(peers)
 
 	invFiles := make(chan *store.File)
-	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles, raftNode)
+	r, commits := raft.New(peers) // TODO remove this from here; move the raft init and the starting of grpc server inside spork.New
+	sporkService := spork.New(dataStorage, cacheStorage, inv, fetcher, peers, invFiles, r, commits)
 	vfs := sfuse.NewFS(&sporkService, invFiles)
 
 	startFuseServer(ctx, cancel, cfg.MountPoint, vfs)
 	defer vfs.Destroy()
-	startGrpcServer(ctx, cancel, cfg.Peers.ThisPeer, dataStorage, raftNode)
+	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, dataStorage, r)
 	handleOsSignals(ctx, cancel)
 	unmountWhenDone(ctx, cfg.MountPoint)
 
@@ -119,7 +119,7 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 	go vfs.WatchInvalidations(ctx, fuseServer)
 }
 
-func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data data.Driver, raft *raft.Node) {
+func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data data.Driver, raft *raft.Raft) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)

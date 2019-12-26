@@ -27,6 +27,7 @@ func NewFetcher(peers *raft.Peers) (Readerer, error) {
 	return multiFetcher{fetchers: peerConns, peers: peers}, nil
 }
 
+// TODO make this more readable
 func (f multiFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 	peersWithFile := f.peers.PeersWithFile(id)
 	var prevErr error
