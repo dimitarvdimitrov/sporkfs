@@ -1,12 +1,14 @@
 package spork
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft"
+	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
@@ -16,23 +18,36 @@ import (
 type Spork struct {
 	inventory   inventory.Driver
 	data, cache data.Driver
-	fetcher     remote.Readerer
+	invalid     chan<- *store.File
 
 	peers   *raft.Peers
-	node    *raft.Node
-	invalid chan<- *store.File
+	raft    *raft.Raft
+	fetcher remote.Readerer
+
+	commitC <-chan *raftpb.Entry
 }
 
-func New(data, cache data.Driver, inv inventory.Driver, fetcher remote.Readerer, peers *raft.Peers, invalid chan<- *store.File, node *raft.Node) Spork {
-	return Spork{
+func New(data, cache data.Driver,
+	inv inventory.Driver,
+	fetcher remote.Readerer,
+	peers *raft.Peers,
+	invalid chan<- *store.File,
+	r *raft.Raft,
+	commits <-chan *raftpb.Entry) Spork {
+
+	s := Spork{
 		inventory: inv,
 		data:      data,
 		cache:     cache,
 		fetcher:   fetcher,
 		peers:     peers,
-		node:      node,
+		raft:      r,
+		commitC:   commits,
 		invalid:   invalid,
 	}
+
+	go s.watchRaft()
+	return s
 }
 
 func (s Spork) Root() *store.File {
@@ -64,6 +79,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			fileSizer:  s.data,
 			w:          w,
 			invalidate: s.invalid,
+			r:          s.raft,
 		},
 	}
 	return rw, nil
@@ -78,7 +94,7 @@ func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (ReadCloser
 
 	if !s.peers.IsLocalFile(f.Id) {
 		log.Debugf("reading remote file")
-		err := s.transferRemoteFile(f.Id, version)
+		err := s.transferRemoteFile(f.Id, version, s.cache)
 		if err != nil {
 			return nil, err
 		}
@@ -96,18 +112,19 @@ func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (ReadCloser
 	}, nil
 }
 
-func (s Spork) transferRemoteFile(id, version uint64) error {
+func (s Spork) transferRemoteFile(id, version uint64, dst data.Driver) error {
 	log.Debugf("transferring remote file %d-%d", id, version)
-	if s.cache.Contains(id, version) {
+	if dst.Contains(id, version) {
 		return nil
 	}
 
-	v, err := s.cache.Add(id, store.ModeRegularFile)
+	// TODO this only works for when the file isn't present locally. any further changes from raft error here
+	v, err := dst.Add(id, store.ModeRegularFile)
 	if err != nil {
 		return err
 	}
 
-	w, err := s.cache.Writer(id, v, os.O_WRONLY)
+	w, err := dst.Writer(id, v, os.O_WRONLY)
 	if err != nil {
 		return err
 	}
@@ -130,7 +147,7 @@ func (s Spork) Write(f *store.File, flags int) (WriteCloser, error) {
 	driver := s.data
 
 	if !s.peers.IsLocalFile(f.Id) {
-		err := s.transferRemoteFile(f.Id, f.Hash)
+		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
 		if err != nil {
 			return nil, err
 		}
@@ -145,6 +162,7 @@ func (s Spork) Write(f *store.File, flags int) (WriteCloser, error) {
 	return &writer{
 		w:          w,
 		f:          f,
+		r:          s.raft,
 		fileSizer:  s.data,
 		invalidate: s.invalid,
 	}, nil
@@ -158,22 +176,35 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 	f.Lock()
 	defer f.Unlock()
 
+	if !s.raft.Add(f.Id, parent.Id, f.Name, f.Mode) {
+		return nil, fmt.Errorf("failed to add file in raft")
+	}
+
+	err := s.createLocally(f, parent)
+	if err != nil {
+		s.raft.Delete(f.Id, parent.Id)
+		return nil, err
+	}
+	return f, nil
+}
+
+func (s Spork) createLocally(f, parent *store.File) error {
 	err := s.inventory.Add(f)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	hash, err := s.data.Add(f.Id, f.Mode)
 	if err != nil {
 		s.inventory.Remove(f.Id)
-		return nil, err
+		return err
 	}
 	f.Hash = hash
 
 	parent.Children = append(parent.Children, f)
 	parent.Size = int64(len(parent.Children))
 
-	return f, nil
+	return nil
 }
 
 func (s Spork) newFile(name string, mode store.FileMode) *store.File {
@@ -188,6 +219,15 @@ func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 }
 
 func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) error {
+	if !s.raft.Rename(file.Id, oldParent.Id, newParent.Id, newName) {
+		return fmt.Errorf("couldn't vote raft change")
+	}
+
+	s.renameLocally(file, newParent, oldParent, newName)
+	return nil
+}
+
+func (s Spork) renameLocally(file *store.File, newParent *store.File, oldParent *store.File, newName string) {
 	oldParent.Lock()
 	defer oldParent.Unlock()
 
@@ -210,7 +250,6 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 		newParent.Children = append(newParent.Children, file)
 	}
 
-	return nil
 }
 
 func (s Spork) Delete(file, parent *store.File) error {
@@ -224,28 +263,37 @@ func (s Spork) Delete(file, parent *store.File) error {
 	parent.Lock()
 	defer parent.Unlock()
 
-	found := false
+	index := -1
 	for i, c := range parent.Children {
 		if c.Id == file.Id {
-			s.data.Remove(file.Id, file.Hash)
-			s.inventory.Remove(file.Id)
-			parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
-			parent.Size--
-
-			found = true
+			index = i
 			break
 		}
 	}
 
-	if !found {
+	if index == -1 {
 		return store.ErrNoSuchFile
 	}
+
+	if !s.raft.Delete(file.Id, parent.Id) {
+		return fmt.Errorf("couldn't vote removal in raft")
+	}
+
+	s.deleteLocally(file, parent, index)
 
 	return nil
 }
 
+func (s Spork) deleteLocally(file *store.File, parent *store.File, index int) {
+	s.data.Remove(file.Id, file.Hash)
+	s.inventory.Remove(file.Id)
+	parent.Children = append(parent.Children[:index], parent.Children[index+1:]...)
+	parent.Size--
+}
+
 func (s Spork) Close() {
+	close(s.invalid)
+	s.raft.Shutdown()
 	s.data.Sync()
 	s.inventory.Sync()
-	s.node.Close()
 }
