@@ -26,7 +26,8 @@ type WriteCloser interface {
 }
 
 type writer struct {
-	f *store.File
+	written bool
+	f       *store.File
 
 	invalidate chan<- *store.File
 	fileSizer  sizer
@@ -39,6 +40,7 @@ func (w *writer) Flush() {
 }
 
 func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
+	w.written = true
 	w.f.Lock()
 	defer w.f.Unlock()
 
@@ -46,6 +48,7 @@ func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (w *writer) Write(p []byte) (int, error) {
+	w.written = true
 	w.f.Lock()
 	defer w.f.Unlock()
 
@@ -53,11 +56,16 @@ func (w *writer) Write(p []byte) (int, error) {
 }
 
 func (w *writer) Close() error {
+	if !w.written {
+		w.w.Close()
+		return nil
+	}
+
 	w.f.Lock()
 	defer w.f.Unlock()
 
 	hash := w.w.Close()
-	size := w.fileSizer.Size(w.f.Id, w.f.Hash)
+	size := w.fileSizer.Size(w.f.Id, hash)
 	now := time.Now()
 
 	// TODO change these with the actual size and offset
