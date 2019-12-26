@@ -8,20 +8,23 @@ import (
 	etcdraftpb "github.com/coreos/etcd/raft/raftpb"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
+	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
 )
 
-type Node struct {
+type node struct {
 	raft    raft.Node
 	peers   *Peers
 	t       *time.Ticker
 	clients map[string]raftpb.RaftClient
 
-	storage *raft.MemoryStorage
-	done    chan struct{}
+	storage  *raft.MemoryStorage
+	commitC  chan<- *raftpb.Entry
+	proposeC <-chan *raftpb.Entry
+	done     chan struct{}
 }
 
-func NewNode(peers *Peers) *Node {
+func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
 	storage := raft.NewMemoryStorage()
 	config := &raft.Config{
 		ID:              uint64(peers.thisPeer) + 1,
@@ -46,24 +49,26 @@ func NewNode(peers *Peers) *Node {
 	}
 
 	raftNode := raft.StartNode(config, raftPeers)
+	commitC := make(chan *raftpb.Entry)
+	proposeC := make(chan *raftpb.Entry)
 
-	node := &Node{
-		raft:    raftNode,
-		storage: storage,
-		clients: clients,
-		peers:   peers,
-		t:       time.NewTicker(time.Millisecond * 100),
-		done:    make(chan struct{}),
+	node := &node{
+		raft:     raftNode,
+		storage:  storage,
+		clients:  clients,
+		peers:    peers,
+		t:        time.NewTicker(time.Millisecond * 100),
+		commitC:  commitC,
+		proposeC: proposeC,
+		done:     make(chan struct{}),
 	}
-	go node.run()
-	return node
+	go node.runRaft()
+	go node.serveProposals()
+
+	return node, commitC, proposeC
 }
 
-func (s *Node) Step(ctx context.Context, e *etcdraftpb.Message) (*raftpb.Empty, error) {
-	return &raftpb.Empty{}, s.raft.Step(ctx, *e)
-}
-
-func (s *Node) run() {
+func (s *node) runRaft() {
 	for {
 		select {
 		case <-s.t.C:
@@ -76,21 +81,42 @@ func (s *Node) run() {
 			}
 			for _, entry := range rd.CommittedEntries {
 				s.process(entry)
-				if entry.Type == etcdraftpb.EntryConfChange {
-					var cc etcdraftpb.ConfChange
-					cc.Unmarshal(entry.Data)
-					s.raft.ApplyConfChange(cc)
-				}
 			}
 			s.raft.Advance()
 		case <-s.done:
+			close(s.commitC)
 			s.raft.Stop()
 			return
 		}
 	}
 }
 
-func (s *Node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.Entry, snapshot etcdraftpb.Snapshot) {
+func (s *node) serveProposals() {
+	for {
+		select {
+		case prop, ok := <-s.proposeC:
+			if !ok {
+				return
+			}
+
+			data, err := proto.Marshal(prop)
+			if err != nil {
+				log.Error("couldn't marshall proposed entry")
+				break
+			}
+
+			ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+			err = s.raft.Propose(ctx, data)
+			if err != nil {
+				log.Errorf("error proposing in raft: %s", err)
+			}
+		case <-s.done:
+			return
+		}
+	}
+}
+
+func (s *node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.Entry, snapshot etcdraftpb.Snapshot) {
 	if !raft.IsEmptyHardState(state) {
 		if err := s.storage.SetHardState(state); err != nil {
 			log.Errorf("saving hard state: %s", err)
@@ -108,30 +134,42 @@ func (s *Node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.En
 	}
 }
 
-func (s *Node) send(messages []etcdraftpb.Message) {
+// TODO parallelize this
+func (s *node) send(messages []etcdraftpb.Message) {
 	for _, m := range messages {
-		peer := s.peers.get(int(m.To) - 1)
-		client, ok := s.clients[peer]
+		peerAddr := s.peers.get(int(m.To) - 1)
+		peer, ok := s.clients[peerAddr]
 		if !ok {
 			log.Errorf("couldn't find peer to send message; message: %#v", m)
 			continue
 		}
 
-		_, err := client.Step(context.Background(), &m)
-		if err != nil {
-			log.Errorf("sending raft message: %s", err)
-		}
+		peer.Step(context.Background(), &m)
 	}
 }
 
-func (s *Node) processSnapshot(snapshot etcdraftpb.Snapshot) {
+func (s *node) processSnapshot(snapshot etcdraftpb.Snapshot) {
 	log.Debugf("processing raft snapshot %s", string(snapshot.Data))
 }
 
-func (s *Node) process(entry etcdraftpb.Entry) {
-	log.Debugf("processing raft entry %#v", entry)
+func (s *node) process(e etcdraftpb.Entry) {
+	log.Debugf("processing raft entry")
+	switch e.Type {
+	case etcdraftpb.EntryConfChange:
+		var cc etcdraftpb.ConfChange
+		_ = cc.Unmarshal(e.Data)
+		s.raft.ApplyConfChange(cc)
+
+	case etcdraftpb.EntryNormal:
+		msg := &raftpb.Entry{}
+		if err := proto.Unmarshal(e.Data, msg); err != nil {
+			log.Errorf("couldn't decode entry %q", string(e.Data))
+			break
+		}
+		s.commitC <- msg
+	}
 }
 
-func (s *Node) Close() {
+func (s *node) close() {
 	close(s.done)
 }
