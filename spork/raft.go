@@ -85,13 +85,13 @@ func (s Spork) watchRaft() {
 			}
 			file.Lock()
 			if s.peers.IsLocalFile(req.Id) {
-				err := s.transferRemoteFile(req.Id, req.Hash, s.data)
+				err := s.updateLocalFile(req.Id, file.Hash, req.Hash, s.data)
 				if err != nil {
 					log.Error("transferring changed local file from raft: %s", err)
 				}
 			} else {
-				if s.cache.ContainsAny(req.Hash) {
-					err := s.transferRemoteFile(req.Id, req.Hash, s.cache)
+				if s.cache.ContainsAny(req.Id) {
+					err := s.updateLocalFile(req.Id, file.Hash, req.Hash, s.cache)
 					if err != nil {
 						log.Error("transferring changed local file from raft: %s", err)
 					}

@@ -111,13 +111,38 @@ func (s Spork) transferRemoteFile(id, version uint64, dst data.Driver) error {
 		return err
 	}
 
-	w, err := dst.Writer(id, v, os.O_WRONLY)
+	w, err := dst.Writer(id, v, 0)
 	if err != nil {
 		return err
 	}
 	defer w.Close()
 
 	r, err := s.fetcher.Reader(id, version)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	_, err = io.Copy(w, r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, dst data.Driver) error {
+	log.Debugf("transferring remote file %d-%d", id, newVersion)
+	if dst.Contains(id, newVersion) {
+		return nil
+	}
+
+	w, err := dst.Writer(id, oldVersion, os.O_WRONLY|os.O_TRUNC)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	r, err := s.fetcher.Reader(id, newVersion)
 	if err != nil {
 		return err
 	}
@@ -160,7 +185,12 @@ func (s Spork) createLocally(f, parent *store.File) error {
 		return err
 	}
 
-	hash, err := s.data.Add(f.Id, f.Mode)
+	driver := s.data
+	if !s.peers.IsLocalFile(f.Id) {
+		driver = s.cache
+	}
+
+	hash, err := driver.Add(f.Id, f.Mode)
 	if err != nil {
 		s.inventory.Remove(f.Id)
 		return err
