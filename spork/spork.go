@@ -64,7 +64,17 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 }
 
 func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
-	r, w, err := s.data.Open(f.Id, f.Hash, flags)
+	driver := s.data
+	if !s.peers.IsLocalFile(f.Id) {
+		log.Debugf("reading remote file")
+		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
+		if err != nil {
+			return nil, err
+		}
+		driver = s.cache
+	}
+
+	r, w, err := driver.Open(f.Id, f.Hash, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -86,30 +96,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 }
 
 func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
-	return s.ReadVersion(f, f.Hash, flags)
-}
-
-func (s Spork) ReadVersion(f *store.File, version uint64, flags int) (ReadCloser, error) {
-	driver := s.data
-
-	if !s.peers.IsLocalFile(f.Id) {
-		log.Debugf("reading remote file")
-		err := s.transferRemoteFile(f.Id, version, s.cache)
-		if err != nil {
-			return nil, err
-		}
-		driver = s.cache
-	}
-
-	r, err := driver.Reader(f.Id, version, flags)
-	if err != nil {
-		return nil, err
-	}
-
-	return &reader{
-		f: f,
-		r: r,
-	}, nil
+	return s.ReadWriter(f, flags)
 }
 
 func (s Spork) transferRemoteFile(id, version uint64, dst data.Driver) error {
@@ -144,28 +131,7 @@ func (s Spork) transferRemoteFile(id, version uint64, dst data.Driver) error {
 }
 
 func (s Spork) Write(f *store.File, flags int) (WriteCloser, error) {
-	driver := s.data
-
-	if !s.peers.IsLocalFile(f.Id) {
-		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
-		if err != nil {
-			return nil, err
-		}
-		driver = s.cache
-	}
-
-	w, err := driver.Writer(f.Id, f.Hash, flags)
-	if err != nil {
-		return nil, err
-	}
-
-	return &writer{
-		w:          w,
-		f:          f,
-		r:          s.raft,
-		fileSizer:  s.data,
-		invalidate: s.invalid,
-	}, nil
+	return s.ReadWriter(f, flags)
 }
 
 func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) (*store.File, error) {

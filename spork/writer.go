@@ -60,6 +60,7 @@ func (w *writer) Close() error {
 	size := w.fileSizer.Size(w.f.Id, w.f.Hash)
 	now := time.Now()
 
+	// TODO change these with the actual size and offset
 	if !w.r.Change(w.f.Id, hash, 0, size) {
 		return fmt.Errorf("couldn't vote file change in raft; changes discarded")
 	}
@@ -69,6 +70,6 @@ func (w *writer) Close() error {
 	w.f.Size = size
 	w.f.Mtime, w.f.Atime = now, now
 
-	w.invalidate <- w.f // TODO maybe remove this this?
+	w.invalidate <- w.f
 	return nil
 }
