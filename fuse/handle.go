@@ -110,9 +110,6 @@ func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 		return nil
 	}
 
-	// TODO maybe this locking has to go at some point
-	h.node.File.Lock()
-	defer h.node.File.Unlock()
 	fId := h.node.File.Id
 
 	if req.ReleaseFlags&fuse.ReleaseFlush != 0 {
