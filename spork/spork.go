@@ -1,23 +1,30 @@
 package spork
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"sync"
+
+	"github.com/dimitarvdimitrov/sporkfs/api"
+	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
-	"github.com/dimitarvdimitrov/sporkfs/store/data"
+	storedata "github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 	"github.com/dimitarvdimitrov/sporkfs/store/remote"
 )
 
 type Spork struct {
 	inventory   inventory.Driver
-	data, cache data.Driver
+	data, cache storedata.Driver
 	invalid     chan<- *store.File
 
 	peers   *raft.Peers
@@ -27,13 +34,29 @@ type Spork struct {
 	commitC <-chan *raftpb.Entry
 }
 
-func New(data, cache data.Driver,
-	inv inventory.Driver,
-	fetcher remote.Readerer,
-	peers *raft.Peers,
-	invalid chan<- *store.File,
-	r *raft.Raft,
-	commits <-chan *raftpb.Entry) Spork {
+func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid chan<- *store.File) (Spork, error) {
+	peers := raft.NewPeerList(cfg.Raft)
+
+	data, err := storedata.NewLocalDriver(cfg.DataDir + "/data")
+	if err != nil {
+		return Spork{}, fmt.Errorf("init data driver: %s", err)
+	}
+	cache, err := storedata.NewLocalDriver(cfg.DataDir + "/cache")
+	if err != nil {
+		return Spork{}, fmt.Errorf("init data driver: %s", err)
+	}
+
+	inv, err := inventory.NewDriver(cfg.DataDir + "/inventory")
+	if err != nil {
+		return Spork{}, fmt.Errorf("init inventory: %s", err)
+	}
+
+	fetcher, err := remote.NewFetcher(peers)
+	if err != nil {
+		return Spork{}, fmt.Errorf("init fetcher: %s", err)
+	}
+
+	r, commits := raft.New(peers)
 
 	s := Spork{
 		inventory: inv,
@@ -46,8 +69,34 @@ func New(data, cache data.Driver,
 		invalid:   invalid,
 	}
 
+	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, r)
 	go s.watchRaft()
-	return s
+
+	return s, nil
+}
+
+func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data storedata.Driver, raft *raft.Raft) {
+	lis, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	grpcServer := grpc.NewServer()
+
+	reflection.Register(grpcServer)
+	proto.RegisterFileServer(grpcServer, api.NewFileServer(data))
+	raftpb.RegisterRaftServer(grpcServer, raft)
+
+	go func() {
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Error(err)
+		}
+		cancel()
+	}()
+
+	go func() {
+		<-ctx.Done()
+		grpcServer.GracefulStop()
+	}()
 }
 
 func (s Spork) Root() *store.File {
@@ -99,7 +148,7 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 	return s.ReadWriter(f, flags)
 }
 
-func (s Spork) transferRemoteFile(id, version uint64, dst data.Driver) error {
+func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) error {
 	log.Debugf("transferring remote file %d-%d", id, version)
 	if dst.Contains(id, version) {
 		return nil
@@ -130,7 +179,7 @@ func (s Spork) transferRemoteFile(id, version uint64, dst data.Driver) error {
 	return nil
 }
 
-func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, dst data.Driver) error {
+func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, dst storedata.Driver) error {
 	log.Debugf("transferring remote file %d-%d", id, newVersion)
 	if dst.Contains(id, newVersion) {
 		return nil
