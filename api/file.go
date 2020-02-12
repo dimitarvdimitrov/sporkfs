@@ -24,7 +24,7 @@ func NewFileServer(s data.Driver) *fileServer {
 }
 
 func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadServer) error {
-	log.Debug("received request for %d-%d", req.Id, req.Version)
+	log.Debugf("received request for %d-%d", req.Id, req.Version)
 	reader, err := server.data.Reader(req.Id, req.Version, os.O_RDONLY)
 	if err != nil {
 		return err
@@ -52,11 +52,4 @@ func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadSer
 		buff = buff[:cap(buff)] // reset the buffer
 	}
 	return nil
-}
-
-func min(a, b int64) int64 {
-	if a > b {
-		return b
-	}
-	return a
 }

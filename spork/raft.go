@@ -93,7 +93,7 @@ func (s Spork) watchRaft() {
 				if s.cache.ContainsAny(req.Id) {
 					err := s.updateLocalFile(req.Id, file.Hash, req.Hash, s.cache)
 					if err != nil {
-						log.Error("transferring changed local file from raft: %s", err)
+						log.Error("transferring changed cached file from raft: %s", err)
 					}
 				}
 			}

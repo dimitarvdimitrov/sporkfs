@@ -145,7 +145,26 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 }
 
 func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
-	return s.ReadWriter(f, flags)
+	driver := s.data
+	if !s.peers.IsLocalFile(f.Id) {
+		log.Debugf("reading remote file")
+		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
+		if err != nil {
+			return nil, err
+		}
+		driver = s.cache
+	}
+
+	r, err := driver.Reader(f.Id, f.Hash, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	reader := &reader{
+		f: f,
+		r: r,
+	}
+	return reader, nil
 }
 
 func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) error {

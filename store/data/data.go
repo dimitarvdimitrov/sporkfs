@@ -174,15 +174,11 @@ func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
 	}
 
 	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
-		flags |= os.O_APPEND
+		flags |= os.O_TRUNC
 	}
 
 	if flags&os.O_WRONLY != 0 {
 		flags ^= os.O_WRONLY
-	}
-
-	if flags&os.O_RDONLY != 0 {
-		flags ^= os.O_RDONLY
 	}
 
 	flags |= os.O_RDWR
@@ -217,9 +213,8 @@ func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
 		flags |= os.O_TRUNC
 	}
-	if flags&os.O_WRONLY == 0 {
-		flags |= os.O_WRONLY
-	}
+
+	flags |= os.O_WRONLY
 
 	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
 	if err != nil {
