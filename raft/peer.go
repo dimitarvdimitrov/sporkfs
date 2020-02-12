@@ -85,6 +85,7 @@ func (p Peers) IsLocalFile(id uint64) bool {
 	return false
 }
 
+// raft doesn't take 0 as a valid peer id, so the returned raft peers have their indexes offset by +1
 func (p Peers) raftPeers() []raft.Peer {
 	rp := make([]raft.Peer, p.Len())
 	for i := range p.p {
@@ -93,9 +94,19 @@ func (p Peers) raftPeers() []raft.Peer {
 	return rp
 }
 
-func (p Peers) get(id int) string {
+func (p Peers) getPeer(id int) string {
 	if id >= p.Len() || id < 0 {
 		return ""
 	}
 	return p.p[id]
+}
+
+// GetPeerRaft is used for compliance with the type of raft id's being uint64 and 0 not being an acceptable peer id
+func (p Peers) GetPeerRaft(id uint64) string {
+	return p.getPeer(int(id - 1))
+}
+
+// returns the raft id for this peer
+func (p Peers) thisPeerRaftId() uint64 {
+	return uint64(p.thisPeer + 1)
 }

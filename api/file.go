@@ -6,6 +6,7 @@ import (
 
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	"github.com/dimitarvdimitrov/sporkfs/log"
+	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 )
 
@@ -14,18 +15,29 @@ import (
 const ChunkSize = 1 << 16
 
 type fileServer struct {
-	data data.Driver
+	data, cache data.Driver
 }
 
-func NewFileServer(s data.Driver) *fileServer {
+func NewFileServer(s, c data.Driver) *fileServer {
 	return &fileServer{
-		data: s,
+		data:  s,
+		cache: c,
 	}
 }
 
 func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadServer) error {
 	log.Debugf("received request for %d-%d", req.Id, req.Version)
-	reader, err := server.data.Reader(req.Id, req.Version, os.O_RDONLY)
+
+	var src data.Driver
+	if server.cache.Contains(req.Id, req.Version) {
+		src = server.cache
+	} else if server.data.Contains(req.Id, req.Version) {
+		src = server.data
+	} else {
+		return store.ErrNoSuchFile
+	}
+
+	reader, err := src.Reader(req.Id, req.Version, os.O_RDONLY)
 	if err != nil {
 		return err
 	}

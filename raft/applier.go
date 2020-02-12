@@ -65,12 +65,13 @@ func (w *applier) watchCommits() {
 	w.l.Unlock()
 }
 
-func (w *applier) ProposeChange(id, hash, offset uint64, size int64) bool {
+func (w *applier) ProposeChange(id, hash, offset, peer uint64, size int64) bool {
 	c := &raftpb.Change{
 		Id:     id,
 		Hash:   hash,
 		Offset: offset,
 		Size:   size,
+		PeerId: peer,
 	}
 	entry := &raftpb.Entry{
 		Id:      w.getId(),

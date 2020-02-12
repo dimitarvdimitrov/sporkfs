@@ -137,7 +137,7 @@ func (s *node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.En
 // TODO parallelize this
 func (s *node) send(messages []etcdraftpb.Message) {
 	for _, m := range messages {
-		peerAddr := s.peers.get(int(m.To) - 1)
+		peerAddr := s.peers.getPeer(int(m.To) - 1)
 		peer, ok := s.clients[peerAddr]
 		if !ok {
 			log.Errorf("couldn't find peer to send message; message: %#v", m)

@@ -12,10 +12,6 @@ import (
 
 const grpcBufferSize = 5 * api.ChunkSize
 
-type Readerer interface {
-	Reader(id, version uint64) (io.ReadCloser, error)
-}
-
 type grpcFetcher struct {
 	client proto.FileClient
 }

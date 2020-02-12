@@ -69,13 +69,13 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid cha
 		invalid:   invalid,
 	}
 
-	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, r)
+	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, cache, r)
 	go s.watchRaft()
 
 	return s, nil
 }
 
-func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data storedata.Driver, raft *raft.Raft) {
+func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data, cache storedata.Driver, raft *raft.Raft) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
@@ -83,7 +83,7 @@ func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr 
 	grpcServer := grpc.NewServer()
 
 	reflection.Register(grpcServer)
-	proto.RegisterFileServer(grpcServer, api.NewFileServer(data))
+	proto.RegisterFileServer(grpcServer, api.NewFileServer(data, cache))
 	raftpb.RegisterRaftServer(grpcServer, raft)
 
 	go func() {
@@ -198,7 +198,7 @@ func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) erro
 	return nil
 }
 
-func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, dst storedata.Driver) error {
+func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peer string, dst storedata.Driver) error {
 	log.Debugf("transferring remote file %d-%d", id, newVersion)
 	if dst.Contains(id, newVersion) {
 		return nil
@@ -210,7 +210,7 @@ func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, dst storedata.
 	}
 	defer w.Close()
 
-	r, err := s.fetcher.Reader(id, newVersion)
+	r, err := s.fetcher.ReaderFromPeer(id, newVersion, peer)
 	if err != nil {
 		return err
 	}
@@ -239,20 +239,26 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 		return nil, fmt.Errorf("failed to add file in raft")
 	}
 
-	err := s.createLocally(f, parent)
+	err := s.inventory.Add(f)
 	if err != nil {
 		s.raft.Delete(f.Id, parent.Id)
 		return nil, err
 	}
+
+	err = s.createInCacheOrData(f, parent)
+	if err != nil {
+		s.inventory.Remove(f.Id)
+		s.raft.Delete(f.Id, parent.Id)
+		return nil, err
+	}
+
+	parent.Children = append(parent.Children, f)
+	parent.Size = int64(len(parent.Children))
+
 	return f, nil
 }
 
-func (s Spork) createLocally(f, parent *store.File) error {
-	err := s.inventory.Add(f)
-	if err != nil {
-		return err
-	}
-
+func (s Spork) createInCacheOrData(f, parent *store.File) error {
 	driver := s.data
 	if !s.peers.IsLocalFile(f.Id) {
 		driver = s.cache
@@ -260,13 +266,9 @@ func (s Spork) createLocally(f, parent *store.File) error {
 
 	hash, err := driver.Add(f.Id, f.Mode)
 	if err != nil {
-		s.inventory.Remove(f.Id)
 		return err
 	}
 	f.Hash = hash
-
-	parent.Children = append(parent.Children, f)
-	parent.Size = int64(len(parent.Children))
 
 	return nil
 }
@@ -350,6 +352,7 @@ func (s Spork) Delete(file, parent *store.File) error {
 
 func (s Spork) deleteLocally(file *store.File, parent *store.File, index int) {
 	s.data.Remove(file.Id, file.Hash)
+	s.cache.Remove(file.Id, file.Hash)
 	s.inventory.Remove(file.Id)
 	parent.Children = append(parent.Children[:index], parent.Children[index+1:]...)
 	parent.Size--

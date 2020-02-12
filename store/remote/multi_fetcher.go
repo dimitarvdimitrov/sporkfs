@@ -7,6 +7,11 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 )
 
+type Readerer interface {
+	Reader(id, version uint64) (io.ReadCloser, error)
+	ReaderFromPeer(id, version uint64, peer string) (io.ReadCloser, error)
+}
+
 type multiFetcher struct {
 	peers    *raft.Peers
 	fetchers map[string]grpcFetcher
@@ -25,6 +30,10 @@ func NewFetcher(peers *raft.Peers) (Readerer, error) {
 	}
 
 	return multiFetcher{fetchers: peerConns, peers: peers}, nil
+}
+
+func (f multiFetcher) ReaderFromPeer(id, version uint64, peer string) (io.ReadCloser, error) {
+	return f.fetchers[peer].Reader(id, version)
 }
 
 // TODO make this more readable

@@ -35,7 +35,7 @@ func (r *Raft) Add(id, parentId uint64, name string, mode store.FileMode) bool {
 }
 
 func (r *Raft) Change(id, hash, offset uint64, size int64) bool {
-	return r.w.ProposeChange(id, hash, offset, size)
+	return r.w.ProposeChange(id, hash, offset, r.n.peers.thisPeerRaftId(), size)
 }
 
 func (r *Raft) Rename(id, oldParentId, newParentId uint64, newName string) bool {

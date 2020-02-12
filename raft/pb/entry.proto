@@ -10,6 +10,8 @@ message Change {
     uint64 offset = 3;
     // size of the change
     int64 size = 4;
+    // raft id of the peer who has the latest file
+    uint64 peer_id = 5;
 }
 
 message Rename {

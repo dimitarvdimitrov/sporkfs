@@ -24,9 +24,20 @@ func (s Spork) watchRaft() {
 			file.Id = req.Id
 			file.Lock()
 
-			err = s.createLocally(file, parent)
-			if err != nil {
-				log.Errorf("can't add committed raft file locally: %s", err)
+			if err = s.inventory.Add(file); err != nil {
+				file.Unlock()
+				parent.Unlock()
+				log.Errorf("adding new raft file to inventory: %s", err)
+				break
+			}
+
+			parent.Children = append(parent.Children, file)
+			parent.Size = int64(len(parent.Children))
+
+			if s.peers.IsLocalFile(file.Id) {
+				if err = s.createInCacheOrData(file, parent); err != nil {
+					log.Errorf("can't add committed raft file locally: %s", err)
+				}
 			}
 			parent.Unlock()
 			file.Unlock()
@@ -84,16 +95,16 @@ func (s Spork) watchRaft() {
 				break
 			}
 			file.Lock()
-			if s.peers.IsLocalFile(req.Id) {
-				err := s.updateLocalFile(req.Id, file.Hash, req.Hash, s.data)
+			if peer := s.peers.GetPeerRaft(req.PeerId); s.peers.IsLocalFile(req.Id) {
+				err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, s.data)
 				if err != nil {
-					log.Error("transferring changed local file from raft: %s", err)
+					log.Errorf("transferring changed local file from raft: %s", err)
 				}
 			} else {
 				if s.cache.ContainsAny(req.Id) {
-					err := s.updateLocalFile(req.Id, file.Hash, req.Hash, s.cache)
+					err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, s.cache)
 					if err != nil {
-						log.Error("transferring changed cached file from raft: %s", err)
+						log.Errorf("transferring changed cached file from raft: %s", err)
 					}
 				}
 			}
