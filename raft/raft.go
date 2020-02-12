@@ -17,7 +17,7 @@ type Committer interface {
 
 type Raft struct {
 	n *node
-	w *wait
+	w *applier
 }
 
 func New(peers *Peers) (*Raft, <-chan *raftpb.Entry) {

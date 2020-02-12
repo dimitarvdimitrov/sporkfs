@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
@@ -40,6 +41,7 @@ func main() {
 
 	<-ctx.Done()
 	log.Info("stopping spork...")
+	time.Sleep(time.Second * 3) // don't judge me
 }
 
 func handleOsSignals(ctx context.Context, cancel context.CancelFunc) {

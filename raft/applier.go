@@ -10,9 +10,8 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
-// TODO rename to applier
-// wait terminates when the commits channel has been closed
-type wait struct {
+// applier terminates when the commits channel has been closed
+type applier struct {
 	proposeC chan<- *raftpb.Entry
 	commitC  <-chan *raftpb.Entry
 	syncC    chan<- *raftpb.Entry
@@ -23,9 +22,9 @@ type wait struct {
 	done    chan struct{}
 }
 
-func newWait(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*wait, <-chan *raftpb.Entry) {
+func newWait(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*applier, <-chan *raftpb.Entry) {
 	syncC := make(chan *raftpb.Entry)
-	w := &wait{
+	w := &applier{
 		proposeC: proposals,
 		commitC:  commits,
 		results:  make(map[uint64]chan struct{}),
@@ -36,14 +35,14 @@ func newWait(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*wai
 	return w, syncC
 }
 
-func (w *wait) isRegistered(reqId uint64) bool {
+func (w *applier) isRegistered(reqId uint64) bool {
 	w.l.Lock()
 	defer w.l.Unlock()
 	_, ok := w.results[reqId]
 	return ok
 }
 
-func (w *wait) watchCommits() {
+func (w *applier) watchCommits() {
 	for entry := range w.commitC {
 		w.l.Lock()
 		resultC, ok := w.results[entry.Id]
@@ -66,7 +65,7 @@ func (w *wait) watchCommits() {
 	w.l.Unlock()
 }
 
-func (w *wait) ProposeChange(id, hash, offset uint64, size int64) bool {
+func (w *applier) ProposeChange(id, hash, offset uint64, size int64) bool {
 	c := &raftpb.Change{
 		Id:     id,
 		Hash:   hash,
@@ -81,7 +80,7 @@ func (w *wait) ProposeChange(id, hash, offset uint64, size int64) bool {
 	return w.propose(entry)
 }
 
-func (w *wait) ProposeAdd(id, parentId uint64, name string, mode store.FileMode) bool {
+func (w *applier) ProposeAdd(id, parentId uint64, name string, mode store.FileMode) bool {
 	a := &raftpb.Add{
 		Id:       id,
 		ParentId: parentId,
@@ -96,7 +95,7 @@ func (w *wait) ProposeAdd(id, parentId uint64, name string, mode store.FileMode)
 	return w.propose(entry)
 }
 
-func (w *wait) ProposeRename(id, oldParentId, newParentId uint64, newName string) bool {
+func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, newName string) bool {
 	r := &raftpb.Rename{
 		Id:          id,
 		OldParentId: oldParentId,
@@ -110,7 +109,7 @@ func (w *wait) ProposeRename(id, oldParentId, newParentId uint64, newName string
 	return w.propose(entry)
 }
 
-func (w *wait) ProposeDelete(id, parentId uint64) bool {
+func (w *applier) ProposeDelete(id, parentId uint64) bool {
 	d := &raftpb.Delete{
 		Id:       id,
 		ParentId: parentId,
@@ -122,7 +121,7 @@ func (w *wait) ProposeDelete(id, parentId uint64) bool {
 	return w.propose(entry)
 }
 
-func (w *wait) propose(entry *raftpb.Entry) bool {
+func (w *applier) propose(entry *raftpb.Entry) bool {
 	w.wg.Add(1)
 	defer w.wg.Done()
 
@@ -154,6 +153,6 @@ func (w *wait) propose(entry *raftpb.Entry) bool {
 
 // TODO generate until a unique id is generated and there isn't a proposal with same id in flight
 // 	and maybe use crypto/rand
-func (w *wait) getId() uint64 {
+func (w *applier) getId() uint64 {
 	return rand.Uint64()
 }
