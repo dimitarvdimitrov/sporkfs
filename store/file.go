@@ -1,6 +1,8 @@
 package store
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -24,11 +26,37 @@ type File struct {
 	Atime time.Time
 	Mtime time.Time
 
+	Parent   *File
 	Children []*File
 }
 
-// Copy copies all the fields of this file to a new struct, except for the RWLock; the RWLock is kept the same
-func (f *File) Copy() *File {
-	localCopy := *f
-	return &localCopy
+type jsonFile File
+
+func (f *File) Serialize(w io.Writer) error {
+	return json.NewEncoder(w).Encode(f)
+}
+
+func (f *File) MarshalJSON() ([]byte, error) {
+	p := f.Parent
+	f.Parent = nil
+	b, err := json.Marshal(jsonFile(*f))
+	f.Parent = p
+
+	return b, err
+}
+
+func (f *File) Deserialize(r io.Reader) error {
+	return json.NewDecoder(r).Decode(f)
+}
+
+func (f *File) UnmarshalJSON(b []byte) error {
+	jf := &jsonFile{}
+	err := json.Unmarshal(b, jf)
+	*f = File(*jf)
+
+	f.RWMutex = &sync.RWMutex{}
+	for _, c := range f.Children {
+		c.Parent = f
+	}
+	return err
 }

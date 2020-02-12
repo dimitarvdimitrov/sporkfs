@@ -39,8 +39,10 @@ func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
 				return
 			}
 			n := newNode(file, f.S)
+			p := newNode(file.Parent, f.S)
 			_ = server.InvalidateNodeAttr(n)
 			_ = server.InvalidateNodeData(n)
+			_ = server.InvalidateEntry(p, n.Name)
 		case <-ctx.Done():
 			return
 		}

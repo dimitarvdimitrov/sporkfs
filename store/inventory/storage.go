@@ -1,7 +1,6 @@
 package inventory
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -13,41 +12,6 @@ import (
 const (
 	indexLocation = "/index"
 )
-
-var root = &store.File{
-	Id:   0,
-	Name: "",
-	Mode: store.ModeDirectory | 0666,
-	Size: 1,
-	Children: []*store.File{
-		{
-			Id:   2,
-			Name: "2.txt",
-			Mode: store.ModeRegularFile,
-			Size: 5,
-		},
-		{
-			Id:   3,
-			Name: "3",
-			Mode: store.ModeDirectory,
-			Size: 1,
-			Children: []*store.File{
-				{
-					Id:   4,
-					Name: "4.txt",
-					Mode: store.ModeRegularFile,
-					Size: 5,
-				},
-				{
-					Id:   5,
-					Name: "5.txt",
-					Mode: store.ModeRegularFile,
-					Size: 5,
-				},
-			},
-		},
-	},
-}
 
 func (d Driver) Sync() {
 	d.persistInventory()
@@ -61,7 +25,7 @@ func (d Driver) persistInventory() {
 	}
 	defer f.Close()
 
-	err = json.NewEncoder(f).Encode(d.root)
+	err = d.root.Serialize(f)
 	if err != nil {
 		log.Errorf("persisting storage index at %s: %s", d.location, err)
 	}
@@ -83,7 +47,7 @@ func restoreInventory(location string) *store.File {
 	defer f.Close()
 
 	root := &store.File{}
-	err = json.NewDecoder(f).Decode(root)
+	err = root.Deserialize(f)
 	if err != nil {
 		log.Fatal(fmt.Errorf("couldn't read inventory index: %w", err))
 	}

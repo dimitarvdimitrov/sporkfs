@@ -147,11 +147,8 @@ func (s *node) send(messages []etcdraftpb.Message) {
 		}
 		wg.Add(1)
 		go func() {
-			_, err := peer.Step(context.Background(), &m)
+			_, _ = peer.Step(context.Background(), &m)
 			wg.Done()
-			if err != nil {
-				log.Errorf("stepping peer: %s", err)
-			}
 		}()
 	}
 	wg.Wait()
