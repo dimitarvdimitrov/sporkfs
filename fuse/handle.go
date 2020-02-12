@@ -46,7 +46,7 @@ func newHandle(n node, r spork.ReadCloser, w spork.WriteCloser) handle {
 
 func (h handle) run() {
 	for wg := range h.fsync {
-		h.flush()
+		h.sync()
 		wg.Done()
 	}
 }
@@ -95,13 +95,13 @@ func toDirEnts(files []*store.File) []fuse.Dirent {
 }
 
 func (h handle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	h.flush()
+	h.sync()
 	return nil
 }
 
-func (h handle) flush() {
+func (h handle) sync() {
 	if h.w != nil {
-		h.w.Flush()
+		h.w.Sync()
 	}
 }
 
@@ -113,7 +113,7 @@ func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	fId := h.node.File.Id
 
 	if req.ReleaseFlags&fuse.ReleaseFlush != 0 {
-		h.flush()
+		h.sync()
 	}
 
 	fsyncReqM.Lock()

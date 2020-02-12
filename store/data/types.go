@@ -25,7 +25,6 @@ type ReadWriterer interface {
 	Open(id, version uint64, flags int) (Reader, Writer, error)
 }
 
-// TODO inplace these in the Driver interface
 type Writerer interface {
 	Writer(id, version uint64, flags int) (Writer, error)
 }
@@ -41,13 +40,13 @@ type Reader interface {
 
 type Writer interface {
 	HashCloser
-	Flusher
+	Syncer
 	io.WriterAt
 	io.Writer
 }
 
-type Flusher interface {
-	Flush()
+type Syncer interface {
+	Sync()
 }
 
 // HashCloser should return the new hash of a file on a close

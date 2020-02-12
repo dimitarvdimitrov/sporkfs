@@ -15,7 +15,7 @@ type sizer interface {
 }
 
 type Writer interface {
-	data.Flusher
+	data.Syncer
 	io.WriterAt
 	io.Writer
 }
@@ -35,8 +35,8 @@ type writer struct {
 	w          data.Writer
 }
 
-func (w *writer) Flush() {
-	w.w.Flush()
+func (w *writer) Sync() {
+	w.w.Sync()
 }
 
 func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {

@@ -21,8 +21,8 @@ func (r readWriter) ReadAt(p []byte, off int64) (n int, err error) {
 	return r.r.ReadAt(p, off)
 }
 
-func (r readWriter) Flush() {
-	r.w.Flush()
+func (r readWriter) Sync() {
+	r.w.Sync()
 }
 
 func (r readWriter) WriteAt(p []byte, off int64) (n int, err error) {

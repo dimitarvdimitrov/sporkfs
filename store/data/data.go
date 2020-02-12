@@ -249,14 +249,13 @@ func (d *localDriver) newSegWriter(id, oldHash uint64, file *os.File, storageLoc
 
 	return &segmentedWriter{
 		f:       file,
-		flush:   flusher(file),
+		sync:    syncer(file),
 		onClose: onClose,
 		hash:    getHash,
 	}
 }
 
-// TODO rename this and all the related funcs and methods to sync/syncer/etc.
-func flusher(f *os.File) func() {
+func syncer(f *os.File) func() {
 	return func() {
 		_ = f.Sync()
 	}

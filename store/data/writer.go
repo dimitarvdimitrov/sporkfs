@@ -13,7 +13,7 @@ type segmentedWriter struct {
 
 	// onClose will be called when Close() has been called
 	onClose func()
-	flush   func()
+	sync    func()
 	hash    hashFunc
 	once    sync.Once
 }
@@ -32,6 +32,6 @@ func (wc *segmentedWriter) Close() uint64 {
 	return wc.hash()
 }
 
-func (wc *segmentedWriter) Flush() {
-	wc.flush()
+func (wc *segmentedWriter) Sync() {
+	wc.sync()
 }

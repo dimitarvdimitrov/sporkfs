@@ -173,7 +173,6 @@ func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) erro
 		return nil
 	}
 
-	// TODO this only works for when the file isn't present locally. any further changes from raft error here
 	v, err := dst.Add(id, store.ModeRegularFile)
 	if err != nil {
 		return err
