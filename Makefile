@@ -1,23 +1,18 @@
-MOUNTPOINT:=/mnt/sporkfs
-DATADIR:=/opt/storage
-BINDIR:=bin/sporkfs
+MOUNT_POINT?=
+CONFIG_DIR?=
+
+BIN_DIR:=bin/sporkfs
 MAIN:=cmd/main.go
-GOFLAGS:=$(GOFLAGS) CGO_ENABLED=0
-
-all: test
-
-.PHONY: test
-test: build
-	$(GOFLAGS) go test -race -timeout 10s ./...
+GOFLAGS:=$(GOFLAGS) CGO_ENABLED=1
 
 build:
-	$(GOFLAGS) go build -race -o $(BINDIR) $(MAIN)
+	$(GOFLAGS) go build -race -o $(BIN_DIR) $(MAIN)
 
-run: build force-unmount
-	$(BINDIR) $(MOUNTPOINT) $(DATADIR)
+run: build
+	$(BIN_DIR) $(CONFIG_DIR)
 
 force-unmount:
-	fusermount -u $(MOUNTPOINT) || echo ''
+	fusermount -u $(MOUNT_POINT) || echo ''
 
 proto-deps:
 	./proto-deps.sh

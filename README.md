@@ -7,12 +7,28 @@ SporkFS is a simple general-purpose distributed file system written in Go.
 ### WIP
 
 Spork is a work in progress but is being actively worked on (every time I have time, really).
-Currently it only offers a local file system, which is pretty useless, but give me a couple of months.
+Currently it supports an in-memory RAFT cluster. I am now working on implementing the persistent WAL.
+This should be the last major stage of development.
 
-## Development
+# Running it
 
-Running tests. This will mount spork at a temporary location on your machine and run end-to-end tests.
+Compile the project as you would any other Golang project (you'd need go installed before that):
 
-```sh
-make test
 ```
+go build -o spork cmd/main.go
+```
+
+The binary takes a single argument - the location of the configuration file. See `/config` for examples.
+
+```
+./spork config/sporkfs-8080.toml & 
+./spork config/sporkfs-8081.toml & 
+```
+
+This should get you going with a 2-node cluster. You may need to set some permissions on `/mnt` and/or `/opt/spork/`. Change the configs to suite you.
+
+# Development
+
+You may need ot run `make proto-deps` to get any deps I used for generating go protobufs.
+
+Run `make protos` to update the `.pb.go` files.
