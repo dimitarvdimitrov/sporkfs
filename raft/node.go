@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/coreos/etcd/raft"
@@ -134,18 +135,26 @@ func (s *node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.En
 	}
 }
 
-// TODO parallelize this
 func (s *node) send(messages []etcdraftpb.Message) {
+	var wg sync.WaitGroup
 	for _, m := range messages {
-		peerAddr := s.peers.getPeer(int(m.To) - 1)
+		m := m
+		peerAddr := s.peers.getPeer(int(m.To) - 1) // the -1 is accounting for raft ids starting from 1
 		peer, ok := s.clients[peerAddr]
 		if !ok {
 			log.Errorf("couldn't find peer to send message; message: %#v", m)
 			continue
 		}
-
-		peer.Step(context.Background(), &m)
+		wg.Add(1)
+		go func() {
+			_, err := peer.Step(context.Background(), &m)
+			wg.Done()
+			if err != nil {
+				log.Errorf("stepping peer: %s", err)
+			}
+		}()
 	}
+	wg.Wait()
 }
 
 func (s *node) processSnapshot(snapshot etcdraftpb.Snapshot) {

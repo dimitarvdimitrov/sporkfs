@@ -123,7 +123,9 @@ func (d *localDriver) Remove(id, hash uint64) {
 	delete(d.index[id], hash)
 	d.indexM.Unlock()
 
-	removeFromDisk(d.storageRoot + path)
+	if path != "" {
+		go removeFromDisk(d.storageRoot + path)
+	}
 }
 
 func removeFromDisk(path string) {

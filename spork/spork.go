@@ -134,11 +134,12 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			r: r,
 		},
 		w: &writer{
-			f:          f,
-			fileSizer:  s.data,
-			w:          w,
-			invalidate: s.invalid,
-			r:          s.raft,
+			f:           f,
+			fileSizer:   driver,
+			fileRemover: driver,
+			w:           w,
+			invalidate:  s.invalid,
+			r:           s.raft,
 		},
 	}
 	return rw, nil

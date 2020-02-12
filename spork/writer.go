@@ -14,6 +14,10 @@ type sizer interface {
 	Size(id, hash uint64) int64
 }
 
+type remover interface {
+	Remove(id, version uint64)
+}
+
 type Writer interface {
 	data.Syncer
 	io.WriterAt
@@ -29,10 +33,11 @@ type writer struct {
 	written bool
 	f       *store.File
 
-	invalidate chan<- *store.File
-	fileSizer  sizer
-	r          raft.Committer
-	w          data.Writer
+	invalidate  chan<- *store.File
+	fileSizer   sizer
+	fileRemover remover
+	r           raft.Committer
+	w           data.Writer
 }
 
 func (w *writer) Sync() {
@@ -64,17 +69,17 @@ func (w *writer) Close() error {
 	w.f.Lock()
 	defer w.f.Unlock()
 
-	hash := w.w.Close()
-	size := w.fileSizer.Size(w.f.Id, hash)
+	newHash := w.w.Close()
+	size := w.fileSizer.Size(w.f.Id, newHash)
 	now := time.Now()
 
-	// TODO change these with the actual size and offset
-	if !w.r.Change(w.f.Id, hash, 0, size) {
+	if !w.r.Change(w.f.Id, newHash, 0, size) {
+		w.fileRemover.Remove(w.f.Id, newHash)
 		return fmt.Errorf("couldn't vote file change in raft; changes discarded")
 	}
 
-	// TODO maybe also prune old versions
-	w.f.Hash = hash
+	w.fileRemover.Remove(w.f.Id, w.f.Hash)
+	w.f.Hash = newHash
 	w.f.Size = size
 	w.f.Mtime, w.f.Atime = now, now
 

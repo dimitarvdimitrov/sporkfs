@@ -16,10 +16,10 @@ type applier struct {
 	commitC  <-chan *raftpb.Entry
 	syncC    chan<- *raftpb.Entry
 
-	l       sync.Mutex
-	wg      sync.WaitGroup
-	results map[uint64]chan struct{}
-	done    chan struct{}
+	l        sync.Mutex
+	wg       sync.WaitGroup
+	inFlight map[uint64]chan struct{}
+	done     chan struct{}
 }
 
 func newWait(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*applier, <-chan *raftpb.Entry) {
@@ -27,7 +27,7 @@ func newWait(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*app
 	w := &applier{
 		proposeC: proposals,
 		commitC:  commits,
-		results:  make(map[uint64]chan struct{}),
+		inFlight: make(map[uint64]chan struct{}),
 		done:     make(chan struct{}),
 		syncC:    syncC,
 	}
@@ -38,14 +38,14 @@ func newWait(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*app
 func (w *applier) isRegistered(reqId uint64) bool {
 	w.l.Lock()
 	defer w.l.Unlock()
-	_, ok := w.results[reqId]
+	_, ok := w.inFlight[reqId]
 	return ok
 }
 
 func (w *applier) watchCommits() {
 	for entry := range w.commitC {
 		w.l.Lock()
-		resultC, ok := w.results[entry.Id]
+		resultC, ok := w.inFlight[entry.Id]
 		if !ok {
 			w.l.Unlock()
 			w.syncC <- entry
@@ -53,13 +53,13 @@ func (w *applier) watchCommits() {
 		}
 		resultC <- struct{}{}
 		close(resultC)
-		delete(w.results, entry.Id)
+		delete(w.inFlight, entry.Id)
 		w.l.Unlock()
 	}
 
 	close(w.done)
 	w.l.Lock()
-	for _, c := range w.results {
+	for _, c := range w.inFlight {
 		close(c)
 	}
 	w.l.Unlock()
@@ -74,7 +74,6 @@ func (w *applier) ProposeChange(id, hash, offset, peer uint64, size int64) bool 
 		PeerId: peer,
 	}
 	entry := &raftpb.Entry{
-		Id:      w.getId(),
 		Message: &raftpb.Entry_Change{Change: c},
 	}
 
@@ -89,7 +88,6 @@ func (w *applier) ProposeAdd(id, parentId uint64, name string, mode store.FileMo
 		Mode:     uint32(mode),
 	}
 	entry := &raftpb.Entry{
-		Id:      w.getId(),
 		Message: &raftpb.Entry_Add{Add: a},
 	}
 
@@ -104,7 +102,6 @@ func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, newName str
 		NewName:     newName,
 	}
 	entry := &raftpb.Entry{
-		Id:      w.getId(),
 		Message: &raftpb.Entry_Rename{Rename: r},
 	}
 	return w.propose(entry)
@@ -116,7 +113,6 @@ func (w *applier) ProposeDelete(id, parentId uint64) bool {
 		ParentId: parentId,
 	}
 	entry := &raftpb.Entry{
-		Id:      w.getId(),
 		Message: &raftpb.Entry_Delete{Delete: d},
 	}
 	return w.propose(entry)
@@ -128,7 +124,8 @@ func (w *applier) propose(entry *raftpb.Entry) bool {
 
 	resultC := make(chan struct{})
 	w.l.Lock()
-	w.results[entry.Id] = resultC
+	entry.Id = w.generateId()
+	w.inFlight[entry.Id] = resultC
 	w.l.Unlock()
 
 	w.proposeC <- entry
@@ -137,7 +134,7 @@ func (w *applier) propose(entry *raftpb.Entry) bool {
 
 	cancel := func() {
 		w.l.Lock()
-		delete(w.results, entry.Id)
+		delete(w.inFlight, entry.Id)
 		w.l.Unlock()
 	}
 	select {
@@ -152,8 +149,13 @@ func (w *applier) propose(entry *raftpb.Entry) bool {
 	}
 }
 
-// TODO generate until a unique id is generated and there isn't a proposal with same id in flight
-// 	and maybe use crypto/rand
-func (w *applier) getId() uint64 {
-	return rand.Uint64()
+// generateId will generate a unique id for a request making sure a request with the same id is not in flight already.
+// It will not lock the in-flight results. This is responsibility of the caller.
+func (w *applier) generateId() (id uint64) {
+	for {
+		id = rand.Uint64()
+		if _, ok := w.inFlight[id]; !ok {
+			return
+		}
+	}
 }

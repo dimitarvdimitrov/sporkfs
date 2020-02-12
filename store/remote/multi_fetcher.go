@@ -36,9 +36,12 @@ func (f multiFetcher) ReaderFromPeer(id, version uint64, peer string) (io.ReadCl
 	return f.fetchers[peer].Reader(id, version)
 }
 
-// TODO make this more readable
 func (f multiFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 	peersWithFile := f.peers.PeersWithFile(id)
+	if len(peersWithFile) == 0 {
+		return nil, fmt.Errorf("couldn't find suitable peer for file %d-%d", id, version)
+	}
+
 	var prevErr error
 	for _, p := range peersWithFile {
 		r, err := f.fetchers[p].Reader(id, version)
@@ -47,9 +50,6 @@ func (f multiFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 			continue
 		}
 		return r, nil
-	}
-	if prevErr == nil {
-		return nil, fmt.Errorf("couldn't find suitable peer for file %d-%d", id, version)
 	}
 	return nil, prevErr
 }
