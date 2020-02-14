@@ -37,12 +37,12 @@ func NewLocalDriver(location string) (*localDriver, error) {
 }
 
 func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
-	d.indexM.Lock()
-	defer d.indexM.Unlock()
-
+	d.indexM.RLock()
 	if _, ok := d.index[id]; ok {
+		d.indexM.RUnlock()
 		return 0, store.ErrFileAlreadyExists
 	}
+	d.indexM.RUnlock()
 
 	if mode.IsDir() {
 		return 0, nil // noop if it's a dir
@@ -57,7 +57,15 @@ func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 	defer f.Close()
 
 	hash := hashHandle(f)
+
+	d.indexM.Lock()
+	if _, ok := d.index[id]; ok {
+		d.indexM.Unlock()
+		go removeFromDisk(filePath)
+		return 0, store.ErrFileAlreadyExists
+	}
 	d.index[id] = map[uint64]string{hash: filePath}
+	d.indexM.Unlock()
 
 	return hash, nil
 }
@@ -121,6 +129,9 @@ func (d *localDriver) Remove(id, hash uint64) {
 	d.indexM.Lock()
 	path := d.index[id][hash]
 	delete(d.index[id], hash)
+	if len(d.index[id]) == 0 {
+		delete(d.index, id)
+	}
 	d.indexM.Unlock()
 
 	if path != "" {
@@ -304,6 +315,7 @@ func (d *localDriver) persistIndex() {
 	f, err := os.Create(d.storageRoot + "/index")
 	if err != nil {
 		log.Error("couldn't persist index", zap.String("location", d.storageRoot), zap.Error(err))
+		return
 	}
 	defer f.Close()
 

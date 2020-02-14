@@ -78,7 +78,6 @@ func (w *writer) Close() error {
 
 	newHash := w.w.Close()
 	size := w.fileSizer.Size(w.f.Id, newHash)
-	now := time.Now()
 
 	if !w.r.Change(w.f.Id, newHash, 0, size) {
 		w.fileRemover.Remove(w.f.Id, newHash)
@@ -90,6 +89,7 @@ func (w *writer) Close() error {
 	}
 	w.f.Hash = newHash
 	w.f.Size = size
+	now := time.Now()
 	w.f.Mtime, w.f.Atime = now, now
 
 	w.invalidate <- w.f

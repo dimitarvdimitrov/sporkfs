@@ -119,9 +119,10 @@ func (s Spork) watchRaft() {
 				}
 			}
 
+			now := time.Now()
 			file.Hash = req.Hash
 			file.Size = s.data.Size(file.Id, file.Hash)
-			file.Mtime = time.Now()
+			file.Mtime, file.Atime = now, now
 			s.invalid <- file
 			file.Unlock()
 		}

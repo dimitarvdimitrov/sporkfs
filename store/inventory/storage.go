@@ -3,6 +3,7 @@ package inventory
 import (
 	"os"
 	"sync"
+	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
@@ -35,6 +36,7 @@ func restoreInventory(location string) *store.File {
 	f, err := os.OpenFile(location, os.O_RDONLY, store.ModeRegularFile)
 	if err != nil {
 		log.Error("couldn't open inventory index", zap.Error(err))
+		now := time.Now()
 		return &store.File{
 			RWMutex:  &sync.RWMutex{},
 			Id:       0,
@@ -42,6 +44,8 @@ func restoreInventory(location string) *store.File {
 			Size:     1,
 			Hash:     0,
 			Children: nil,
+			Atime:    now,
+			Mtime:    now,
 		}
 	}
 	defer f.Close()

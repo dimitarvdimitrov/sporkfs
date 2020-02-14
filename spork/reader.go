@@ -2,6 +2,7 @@ package spork
 
 import (
 	"io"
+	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
@@ -38,5 +39,6 @@ func (r *reader) Read(p []byte) (n int, err error) {
 }
 
 func (r *reader) Close() error {
+	r.f.Atime = time.Now()
 	return r.r.Close()
 }

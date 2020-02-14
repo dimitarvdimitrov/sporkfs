@@ -41,7 +41,6 @@ func newStorageLocation(id, hash uint64) string {
 	binary.BigEndian.PutUint64(msg[8:], hash)
 
 	hasher := sha1.New()
-	hasher.BlockSize()
 	_, _ = hasher.Write(msg[:])
 
 	return (&big.Int{}).SetBytes(hasher.Sum(nil)).String()
