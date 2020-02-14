@@ -1,9 +1,10 @@
 package data
 
 import (
+	"crypto/sha1"
+	"encoding/binary"
 	"encoding/json"
-	"fmt"
-	"math/rand"
+	"math/big"
 	"os"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
@@ -32,7 +33,15 @@ func restoreIndex(location string) index {
 	return index
 }
 
-// newStorageLocation returns a supposedly unique file name based on crypto/rand and the file ID
-func newStorageLocation(id uint64) string {
-	return fmt.Sprintf("%d-%d", id, rand.Int())
+// newStorageLocation returns a unique file name based on the file ID and the current hash
+func newStorageLocation(id, hash uint64) string {
+	var msg [16]byte
+	binary.BigEndian.PutUint64(msg[:8], id)
+	binary.BigEndian.PutUint64(msg[8:], hash)
+
+	hasher := sha1.New()
+	hasher.BlockSize()
+	_, _ = hasher.Write(msg[:])
+
+	return (&big.Int{}).SetBytes(hasher.Sum(nil)).String()
 }

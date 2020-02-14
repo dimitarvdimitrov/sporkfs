@@ -47,7 +47,7 @@ func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 		return 0, nil // noop if it's a dir
 	}
 
-	filePath := newStorageLocation(id)
+	filePath := newStorageLocation(id, 0)
 
 	f, err := os.OpenFile(d.storageRoot+filePath, os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
@@ -168,7 +168,7 @@ func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
 		return nil, nil, store.ErrNoSuchFile
 	}
 
-	newLocation := newStorageLocation(id)
+	newLocation := newStorageLocation(id, hash)
 	newFilePath := d.storageRoot + newLocation
 	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
 	if err != nil {
@@ -205,7 +205,7 @@ func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 	}
 	oldFilePath := d.storageRoot + oldLocation
 
-	newLocation := newStorageLocation(id)
+	newLocation := newStorageLocation(id, hash)
 	newFilePath := d.storageRoot + newLocation
 	err := duplicateFile(oldFilePath, newFilePath)
 	if err != nil {
