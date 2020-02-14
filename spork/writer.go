@@ -30,8 +30,7 @@ type WriteCloser interface {
 }
 
 type writer struct {
-	written bool
-	f       *store.File
+	f *store.File
 
 	invalidate  chan<- *store.File
 	fileSizer   sizer
@@ -45,7 +44,6 @@ func (w *writer) Sync() {
 }
 
 func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
-	w.written = true
 	w.f.Lock()
 	defer w.f.Unlock()
 
@@ -53,7 +51,6 @@ func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (w *writer) Write(p []byte) (int, error) {
-	w.written = true
 	w.f.Lock()
 	defer w.f.Unlock()
 
@@ -61,11 +58,6 @@ func (w *writer) Write(p []byte) (int, error) {
 }
 
 func (w *writer) Close() error {
-	if !w.written {
-		w.w.Close()
-		return nil
-	}
-
 	w.f.Lock()
 	defer w.f.Unlock()
 
@@ -78,7 +70,9 @@ func (w *writer) Close() error {
 		return fmt.Errorf("couldn't vote file change in raft; changes discarded")
 	}
 
-	w.fileRemover.Remove(w.f.Id, w.f.Hash)
+	if w.f.Hash != newHash {
+		w.fileRemover.Remove(w.f.Id, w.f.Hash)
+	}
 	w.f.Hash = newHash
 	w.f.Size = size
 	w.f.Mtime, w.f.Atime = now, now
