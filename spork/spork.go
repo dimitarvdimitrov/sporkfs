@@ -7,25 +7,27 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/api"
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
-
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	storedata "github.com/dimitarvdimitrov/sporkfs/store/data"
+	"github.com/dimitarvdimitrov/sporkfs/store/data/cache"
 	"github.com/dimitarvdimitrov/sporkfs/store/inventory"
 	"github.com/dimitarvdimitrov/sporkfs/store/remote"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 type Spork struct {
 	inventory        inventory.Driver
-	data, cache      storedata.Driver
+	data             storedata.Driver
+	cache            cache.Cache
 	invalid, deleted chan<- *store.File
 
 	peers   *raft.Peers
@@ -42,10 +44,11 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 	if err != nil {
 		return Spork{}, fmt.Errorf("init data driver: %s", err)
 	}
-	cache, err := storedata.NewLocalDriver(cfg.DataDir + "/cache")
+	cacheData, err := storedata.NewLocalDriver(cfg.DataDir + "/cache")
 	if err != nil {
 		return Spork{}, fmt.Errorf("init data driver: %s", err)
 	}
+	c := cache.New(cacheData)
 
 	inv, err := inventory.NewDriver(cfg.DataDir + "/inventory")
 	if err != nil {
@@ -62,7 +65,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 	s := Spork{
 		inventory: inv,
 		data:      data,
-		cache:     cache,
+		cache:     c,
 		fetcher:   fetcher,
 		peers:     peers,
 		raft:      r,
@@ -71,7 +74,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 		deleted:   deleted,
 	}
 
-	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, cache, r)
+	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, c, r)
 	go s.watchRaft()
 
 	return s, nil
@@ -278,6 +281,7 @@ func (s Spork) createInCacheOrData(f, parent *store.File) error {
 }
 
 func (s Spork) newFile(name string, mode store.FileMode) *store.File {
+	now := time.Now()
 	return &store.File{
 		RWMutex:  &sync.RWMutex{},
 		Id:       s.inventory.NewId(),
@@ -285,6 +289,8 @@ func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 		Mode:     mode,
 		Size:     0,
 		Children: nil,
+		Mtime:    now,
+		Atime:    now,
 	}
 }
 
@@ -320,7 +326,6 @@ func (s Spork) renameLocally(file *store.File, newParent *store.File, oldParent 
 
 		newParent.Children = append(newParent.Children, file)
 	}
-
 }
 
 func (s Spork) Delete(file, parent *store.File) error {
