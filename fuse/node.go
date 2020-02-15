@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
@@ -14,24 +13,20 @@ import (
 	"github.com/seaweedfs/fuse/fs"
 )
 
-// fsyncReq holds channels that are sent on when a node received an Fsync request.
-// Each handle should add their channel here on creation.
-// This happens because the Fsync method should be on the Handle not on the Node
-// and we need a way of communicating this to the handles.
-// There is a TO DO in seaweedfs.fuse to move the interface.
-var fsyncReq = map[uint64]map[fuse.HandleID]chan *sync.WaitGroup{}
-var fsyncReqM = sync.Mutex{}
-
 type node struct {
 	*store.File
-	spork *spork.Spork
+	registrar nodeRegistrar
+	spork     *spork.Spork
 }
 
-func newNode(f *store.File, s *spork.Spork) node {
-	return node{
-		File:  f,
-		spork: s,
+func newNode(f *store.File, s *spork.Spork, r nodeRegistrar) node {
+	n := node{
+		File:      f,
+		spork:     s,
+		registrar: r,
 	}
+	r.registerNode(n)
+	return n
 }
 
 func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
@@ -79,7 +74,7 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	if err != nil {
 		return nil, parseError(err)
 	}
-	return newNode(file, n.spork), nil
+	return newNode(file, n.spork, n.registrar), nil
 }
 
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
@@ -102,6 +97,10 @@ func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 }
 
 func (n node) open(flags int) (r spork.ReadCloser, w spork.WriteCloser, err error) {
+	if !n.registrar.nodeRegistered(n) {
+		return nil, nil, fuse.ESTALE
+	}
+
 	fuseFlags := fuse.OpenFlags(flags)
 
 	switch {
@@ -122,7 +121,7 @@ func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	if err != nil {
 		return nil, nil, err
 	}
-	node := newNode(f, n.spork)
+	node := newNode(f, n.spork, n.registrar)
 
 	var reader spork.ReadCloser
 	var writer spork.WriteCloser
@@ -141,7 +140,7 @@ func (n node) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	if err != nil {
 		return nil, err
 	}
-	return newNode(newFile, n.spork), nil
+	return newNode(newFile, n.spork, n.registrar), nil
 }
 
 func (n node) create(ctx context.Context, name string, mode os.FileMode) (*store.File, error) {
@@ -175,24 +174,8 @@ func (n node) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	return parseError(n.spork.Delete(file, n.File))
 }
 
+// seaweedfs also do this so fuck it. This method is supposed to be on the handle, and there is a TO DO in
+// bazil.fuse to move it.
 func (n node) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	fsyncReqM.Lock()
-	handleFsync, ok := fsyncReq[n.Id][req.Handle]
-	if !ok {
-		fsyncReqM.Unlock()
-		return nil
-	}
-
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	select {
-	case handleFsync <- wg:
-	default:
-		// i.e. there's already a pending fsync
-		wg.Done()
-	}
-	fsyncReqM.Unlock()
-	wg.Wait()
-
 	return nil
 }

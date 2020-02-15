@@ -13,6 +13,7 @@ func (s Spork) watchRaft() {
 		switch msg := entry.Message.(type) {
 		case *raftpb.Entry_Add:
 			req := msg.Add
+			log.Debugf("processing add raft entry id:%d, name:%s", req.Id, req.Name)
 			parent, err := s.inventory.Get(req.ParentId)
 			if err != nil {
 				log.Errorf("actioning raft committed entry: %s", err)
@@ -39,10 +40,13 @@ func (s Spork) watchRaft() {
 					log.Errorf("can't add committed raft file locally: %s", err)
 				}
 			}
+			s.invalid <- parent
 			parent.Unlock()
 			file.Unlock()
 		case *raftpb.Entry_Rename:
 			req := msg.Rename
+			log.Debugf("processing rename raft entry id:%d, new_name:%s", req.Id, req.NewName)
+
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
 				log.Errorf("rename file for raft (file): %s", err)
@@ -57,8 +61,11 @@ func (s Spork) watchRaft() {
 			}
 
 			s.renameLocally(file, newParent, oldParent, req.NewName)
+			s.invalid <- file
 		case *raftpb.Entry_Delete:
 			req := msg.Delete
+			log.Debugf("processing delete raft entry id:%d", req.Id)
+
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
 				log.Errorf("rename file for raft (file): %s", err)
@@ -79,15 +86,16 @@ func (s Spork) watchRaft() {
 			}
 
 			if index == -1 {
-				log.Errorf("couldn't find child in parent file to remove (raft)")
+				log.Error("couldn't find child in parent file to remove (raft)")
 			} else {
 				s.deleteLocally(file, parent, index)
 			}
-
+			s.deleted <- file
 			file.Unlock()
 			parent.Unlock()
 		case *raftpb.Entry_Change:
 			req := msg.Change
+			log.Debugf("processing change raft entry id:%d, hash:%d", req.Id, req.Hash)
 
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
@@ -112,8 +120,9 @@ func (s Spork) watchRaft() {
 			file.Hash = req.Hash
 			file.Size = s.data.Size(file.Id, file.Hash)
 			file.Mtime = time.Now()
-			file.Unlock()
 			s.invalid <- file
+			file.Unlock()
 		}
+		log.Debug("finished processing raft entry")
 	}
 }

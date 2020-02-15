@@ -23,9 +23,9 @@ import (
 )
 
 type Spork struct {
-	inventory   inventory.Driver
-	data, cache storedata.Driver
-	invalid     chan<- *store.File
+	inventory        inventory.Driver
+	data, cache      storedata.Driver
+	invalid, deleted chan<- *store.File
 
 	peers   *raft.Peers
 	raft    *raft.Raft
@@ -34,7 +34,7 @@ type Spork struct {
 	commitC <-chan *raftpb.Entry
 }
 
-func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid chan<- *store.File) (Spork, error) {
+func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, deleted chan<- *store.File) (Spork, error) {
 	peers := raft.NewPeerList(cfg.Raft)
 
 	data, err := storedata.NewLocalDriver(cfg.DataDir + "/data")
@@ -67,6 +67,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid cha
 		raft:      r,
 		commitC:   commits,
 		invalid:   invalid,
+		deleted:   deleted,
 	}
 
 	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, cache, r)
@@ -115,7 +116,7 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 	driver := s.data
 	if !s.peers.IsLocalFile(f.Id) {
-		log.Debugf("reading remote file")
+		log.Debug("reading remote file for read/write")
 		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
 		if err != nil {
 			return nil, err
@@ -148,7 +149,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 	driver := s.data
 	if !s.peers.IsLocalFile(f.Id) {
-		log.Debugf("reading remote file")
+		log.Debug("reading remote file for read")
 		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
 		if err != nil {
 			return nil, err
@@ -171,29 +172,30 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) error {
 	log.Debugf("transferring remote file %d-%d", id, version)
 	if dst.Contains(id, version) {
+		log.Debug("file already present in destination id:%d, hash:%d", id, version)
 		return nil
 	}
 
 	v, err := dst.Add(id, store.ModeRegularFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("adding file to destiantion id:%d, hash:%d, err:%w", id, version, err)
 	}
 
 	w, err := dst.Writer(id, v, 0)
 	if err != nil {
-		return err
+		return fmt.Errorf("writing file to destination id:%d, hash:%d, err:%w", id, version, err)
 	}
 	defer w.Close()
 
 	r, err := s.fetcher.Reader(id, version)
 	if err != nil {
-		return err
+		return fmt.Errorf("initing fetcher for id:%d, hash:%d, err:%w", id, version, err)
 	}
 	defer r.Close()
 
 	_, err = io.Copy(w, r)
 	if err != nil {
-		return err
+		return fmt.Errorf("error during stream transfer of id:%d, hash: %d, err:%w", id, version, err)
 	}
 	return nil
 }
@@ -293,6 +295,7 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 	return nil
 }
 
+// TODO move the locking here to whoever calls renameLocally
 func (s Spork) renameLocally(file *store.File, newParent *store.File, oldParent *store.File, newName string) {
 	oldParent.Lock()
 	defer oldParent.Unlock()

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
@@ -48,9 +49,11 @@ func (w *applier) watchCommits() {
 		resultC, ok := w.inFlight[entry.Id]
 		if !ok {
 			w.l.Unlock()
+			log.Debug("queuing enforcement of raft entry")
 			w.syncC <- entry
 			continue
 		}
+		log.Debug("queuing confirmation of previously proposed raft entry")
 		resultC <- struct{}{}
 		close(resultC)
 		delete(w.inFlight, entry.Id)

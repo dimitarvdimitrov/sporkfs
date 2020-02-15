@@ -3,7 +3,7 @@ package store
 import "errors"
 
 var (
-	ErrNoSuchFile        = errors.New("no such file or directory")
-	ErrFileAlreadyExists = errors.New("file exists")
-	ErrDirectoryNotEmpty = errors.New("directory not empty")
+	ErrNoSuchFile        = errors.New("[spork]: no such file or directory")
+	ErrFileAlreadyExists = errors.New("[spork]: file exists")
+	ErrDirectoryNotEmpty = errors.New("[spork]: directory not empty")
 )

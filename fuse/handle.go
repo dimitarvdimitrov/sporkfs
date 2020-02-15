@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"math/rand"
-	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -16,39 +15,21 @@ type handle struct {
 	id   fuse.HandleID
 	node node
 
-	r     spork.ReadCloser
-	w     spork.WriteCloser
-	fsync chan *sync.WaitGroup
+	r spork.ReadCloser
+	w spork.WriteCloser
 }
 
 func newHandle(n node, r spork.ReadCloser, w spork.WriteCloser) handle {
-	fsync := make(chan *sync.WaitGroup)
 	hId := fuse.HandleID(rand.Uint64())
 
-	fsyncReqM.Lock()
-	if chans := fsyncReq[n.Id]; chans == nil {
-		fsyncReq[n.Id] = make(map[fuse.HandleID]chan *sync.WaitGroup, 1)
-	}
-	fsyncReq[n.Id][hId] = fsync
-	fsyncReqM.Unlock()
-
 	h := handle{
-		id:    hId,
-		node:  n,
-		r:     r,
-		w:     w,
-		fsync: fsync,
+		id:   hId,
+		node: n,
+		r:    r,
+		w:    w,
 	}
-	go h.run()
 
 	return h
-}
-
-func (h handle) run() {
-	for wg := range h.fsync {
-		h.sync()
-		wg.Done()
-	}
 }
 
 func (h handle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
@@ -115,14 +96,6 @@ func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	if req.ReleaseFlags&fuse.ReleaseFlush != 0 {
 		h.sync()
 	}
-
-	fsyncReqM.Lock()
-	close(h.fsync)
-	delete(fsyncReq[fId], h.id)
-	if len(fsyncReq[fId]) == 0 {
-		delete(fsyncReq, fId)
-	}
-	fsyncReqM.Unlock()
 
 	var err error
 	if h.r != nil {

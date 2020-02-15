@@ -27,12 +27,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	invFiles := make(chan *store.File)
-	sporkService, err := spork.New(ctx, cancel, cfg, invFiles)
+	deletedFiles := make(chan *store.File)
+	sporkService, err := spork.New(ctx, cancel, cfg, invFiles, deletedFiles)
 	if err != nil {
 		log.Fatal("inti: ", err)
 	}
 
-	vfs := sfuse.NewFS(&sporkService, invFiles)
+	vfs := sfuse.NewFS(&sporkService, invFiles, deletedFiles)
 
 	startFuseServer(ctx, cancel, cfg.MountPoint, vfs)
 	defer vfs.Destroy()
@@ -91,6 +92,7 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 	}()
 
 	go vfs.WatchInvalidations(ctx, fuseServer)
+	go vfs.WatchDeletions(ctx)
 }
 
 func parseConfig(dir string) (cfg spork.Config) {
