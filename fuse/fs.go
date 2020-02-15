@@ -60,7 +60,7 @@ func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
 				_ = server.InvalidateNodeData(n)
 			}
 			if pok {
-				_ = server.InvalidateEntry(p, n.Name)
+				_ = server.InvalidateEntry(p, file.Name)
 				_ = server.InvalidateNodeData(p)
 			}
 			log.Debugf("invalidated file and its parent entry, id:%d, hash:%d, name:%s", file.Id, file.Hash, file.Name)
@@ -94,6 +94,8 @@ func parseError(err error) error {
 		return fuse.EEXIST
 	case store.ErrDirectoryNotEmpty:
 		return fuse.Errno(syscall.ENOTEMPTY)
+	case store.ErrStaleHandle:
+		return fuse.ESTALE
 	default:
 		return err
 	}

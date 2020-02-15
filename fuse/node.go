@@ -98,7 +98,7 @@ func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenRe
 
 func (n node) open(flags int) (r spork.ReadCloser, w spork.WriteCloser, err error) {
 	if !n.registrar.nodeRegistered(n) {
-		return nil, nil, fuse.ESTALE
+		return nil, nil, store.ErrStaleHandle
 	}
 
 	fuseFlags := fuse.OpenFlags(flags)
@@ -126,7 +126,7 @@ func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	var reader spork.ReadCloser
 	var writer spork.WriteCloser
 
-	if node.Mode&store.ModeDirectory == 0 {
+	if node.Mode.IsRegular() {
 		reader, writer, err = node.open(int(req.Flags))
 	}
 	h := newHandle(node, reader, writer)

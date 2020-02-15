@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
@@ -32,11 +33,12 @@ type WriteCloser interface {
 type writer struct {
 	f *store.File
 
-	invalidate  chan<- *store.File
-	fileSizer   sizer
-	fileRemover remover
-	r           raft.Committer
-	w           data.Writer
+	startingHash uint64
+	invalidate   chan<- *store.File
+	fileSizer    sizer
+	fileRemover  remover
+	r            raft.Committer
+	w            data.Writer
 }
 
 func (w *writer) Sync() {
@@ -47,6 +49,10 @@ func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
 	w.f.Lock()
 	defer w.f.Unlock()
 
+	if w.f.Hash != w.startingHash {
+		return 0, store.ErrStaleHandle
+	}
+
 	return w.w.WriteAt(p, off)
 }
 
@@ -54,12 +60,21 @@ func (w *writer) Write(p []byte) (int, error) {
 	w.f.Lock()
 	defer w.f.Unlock()
 
+	if w.f.Hash != w.startingHash {
+		return 0, store.ErrStaleHandle
+	}
+
 	return w.w.Write(p)
 }
 
 func (w *writer) Close() error {
+	log.Debug("closing writer") // TODO remove
 	w.f.Lock()
 	defer w.f.Unlock()
+
+	if w.f.Hash != w.startingHash {
+		return store.ErrStaleHandle
+	}
 
 	newHash := w.w.Close()
 	size := w.fileSizer.Size(w.f.Id, newHash)
@@ -78,5 +93,6 @@ func (w *writer) Close() error {
 	w.f.Mtime, w.f.Atime = now, now
 
 	w.invalidate <- w.f
+	log.Debug("successfully closed file (including raft and invalidation)", "id", w.f.Id)
 	return nil
 }

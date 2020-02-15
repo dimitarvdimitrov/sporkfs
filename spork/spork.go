@@ -135,12 +135,13 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			r: r,
 		},
 		w: &writer{
-			f:           f,
-			fileSizer:   driver,
-			fileRemover: driver,
-			w:           w,
-			invalidate:  s.invalid,
-			r:           s.raft,
+			startingHash: f.Hash,
+			f:            f,
+			fileSizer:    driver,
+			fileRemover:  driver,
+			w:            w,
+			invalidate:   s.invalid,
+			r:            s.raft,
 		},
 	}
 	return rw, nil
@@ -172,7 +173,7 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) error {
 	log.Debugf("transferring remote file %d-%d", id, version)
 	if dst.Contains(id, version) {
-		log.Debug("file already present in destination id:%d, hash:%d", id, version)
+		log.Debugf("file already present in destination id:%d, hash:%d", id, version)
 		return nil
 	}
 

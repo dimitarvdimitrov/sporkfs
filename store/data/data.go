@@ -43,7 +43,7 @@ func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 		return 0, store.ErrFileAlreadyExists
 	}
 
-	if mode&store.ModeDirectory != 0 {
+	if mode.IsDir() {
 		return 0, nil // noop if it's a dir
 	}
 

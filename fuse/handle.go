@@ -100,13 +100,13 @@ func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	var err error
 	if h.r != nil {
 		if rErr := h.r.Close(); rErr != nil {
-			log.Errorf("closing reader %x: %s", fId, rErr)
+			log.Errorf("closing reader %d: %s", fId, rErr)
 			err = rErr
 		}
 	}
 	if h.w != nil {
 		if wErr := h.w.Close(); wErr != nil {
-			log.Errorf("closing writer %x: %s", fId, wErr)
+			log.Errorf("closing writer %d: %s", fId, wErr)
 			err = wErr
 		}
 	}

@@ -34,6 +34,7 @@ func (s Spork) watchRaft() {
 
 			parent.Children = append(parent.Children, file)
 			parent.Size = int64(len(parent.Children))
+			file.Parent = parent
 
 			if s.peers.IsLocalFile(file.Id) {
 				if err = s.createInCacheOrData(file, parent); err != nil {
@@ -68,11 +69,11 @@ func (s Spork) watchRaft() {
 
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
-				log.Errorf("rename file for raft (file): %s", err)
+				log.Errorf("delete file for raft (file): %s", err)
 			}
 			parent, err := s.inventory.Get(req.ParentId)
 			if err != nil {
-				log.Errorf("rename file for raft (old parent): %s", err)
+				log.Errorf("delete file for raft (old parent): %s", err)
 			}
 			file.Lock()
 			parent.Lock()
