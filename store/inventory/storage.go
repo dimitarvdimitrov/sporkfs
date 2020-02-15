@@ -1,12 +1,12 @@
 package inventory
 
 import (
-	"fmt"
 	"os"
 	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
+	"go.uber.org/zap"
 )
 
 const (
@@ -21,20 +21,20 @@ func (d Driver) Sync() {
 func (d Driver) persistInventory() {
 	f, err := os.Create(d.location + indexLocation)
 	if err != nil {
-		log.Errorf("couldn't persist index at %s: %s", d.location, err)
+		log.Error("couldn't persist index at", zap.String("location", d.location), zap.Error(err))
 	}
 	defer f.Close()
 
 	err = d.root.Serialize(f)
 	if err != nil {
-		log.Errorf("persisting storage index at %s: %s", d.location, err)
+		log.Error("persisting storage index at", zap.String("location", d.location), zap.Error(err))
 	}
 }
 
 func restoreInventory(location string) *store.File {
 	f, err := os.OpenFile(location, os.O_RDONLY, store.ModeRegularFile)
 	if err != nil {
-		log.Errorf("couldn't open inventory index %s", err)
+		log.Error("couldn't open inventory index", zap.Error(err))
 		return &store.File{
 			RWMutex:  &sync.RWMutex{},
 			Id:       0,
@@ -49,7 +49,7 @@ func restoreInventory(location string) *store.File {
 	root := &store.File{}
 	err = root.Deserialize(f)
 	if err != nil {
-		log.Fatal(fmt.Errorf("couldn't read inventory index: %w", err))
+		log.Fatal("couldn't read inventory index", zap.Error(err))
 	}
 	return root
 }

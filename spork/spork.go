@@ -10,6 +10,7 @@ import (
 
 	"github.com/dimitarvdimitrov/sporkfs/api"
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -79,7 +80,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data, cache storedata.Driver, raft *raft.Raft) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatal("failed to listen", zap.Error(err))
 	}
 	grpcServer := grpc.NewServer()
 
@@ -89,7 +90,7 @@ func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr 
 
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
-			log.Error(err)
+			log.Error("serve grpc", zap.Error(err))
 		}
 		cancel()
 	}()
@@ -171,9 +172,9 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 }
 
 func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) error {
-	log.Debugf("transferring remote file %d-%d", id, version)
+	log.Debug("transferring remote file", log.Id(id), log.Hash(version))
 	if dst.Contains(id, version) {
-		log.Debugf("file already present in destination id:%d, hash:%d", id, version)
+		log.Debug("file already present in destination", log.Id(id), log.Hash(version))
 		return nil
 	}
 
@@ -202,7 +203,7 @@ func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) erro
 }
 
 func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peer string, dst storedata.Driver) error {
-	log.Debugf("transferring remote file %d-%d", id, newVersion)
+	log.Debug("transferring remote file", log.Id(id), log.Hash(newVersion))
 	if dst.Contains(id, newVersion) {
 		return nil
 	}

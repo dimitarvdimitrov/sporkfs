@@ -11,6 +11,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/minio/highwayhash"
+	"go.uber.org/zap"
 )
 
 var (
@@ -54,7 +55,6 @@ func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 		return 0, err
 	}
 	defer f.Close()
-	log.Debugf("created internal file %s", filePath)
 
 	hash := hashHandle(f)
 	d.index[id] = map[uint64]string{hash: filePath}
@@ -68,7 +68,7 @@ func hashPath(path string) uint64 {
 		// retry
 		file, err = os.Open(path)
 		if err != nil {
-			log.Errorf("couldn't open file to hash: %s", err)
+			log.Error("couldn't open file to hash", zap.Error(err))
 			return 0
 		}
 	}
@@ -82,7 +82,7 @@ func hashHandle(file *os.File) uint64 {
 		// retry
 		hash, err = highwayhash.New64(hashKey)
 		if err != nil {
-			log.Errorf("couldn't start hashing file: %s", err)
+			log.Error("couldn't start hashing file", zap.Error(err))
 			return 0
 		}
 	}
@@ -92,7 +92,7 @@ func hashHandle(file *os.File) uint64 {
 		// retry
 		_, err = io.Copy(hash, file)
 		if err != nil {
-			log.Errorf("couldn't hash file: %s", err)
+			log.Error("couldn't hash file", zap.Error(err))
 		}
 	}
 	return hash.Sum64()
@@ -131,7 +131,7 @@ func (d *localDriver) Remove(id, hash uint64) {
 func removeFromDisk(path string) {
 	err := os.Remove(path)
 	if err != nil {
-		log.Errorf("couldn't remove file: %s", err)
+		log.Error("couldn't remove file", zap.Error(err))
 	}
 }
 
@@ -275,8 +275,7 @@ func duplicateFile(oldPath, newPath string) error {
 		return err
 	}
 	defer destination.Close()
-	n, err := io.Copy(destination, source)
-	log.Debugf("duplicated %d bytes", n)
+	_, err = io.Copy(destination, source)
 	return err
 }
 
@@ -304,7 +303,7 @@ func (d *localDriver) Sync() {
 func (d *localDriver) persistIndex() {
 	f, err := os.Create(d.storageRoot + "/index")
 	if err != nil {
-		log.Errorf("couldn't persist index at %s: %s", d.storageRoot, err)
+		log.Error("couldn't persist index", zap.String("location", d.storageRoot), zap.Error(err))
 	}
 	defer f.Close()
 
@@ -312,6 +311,6 @@ func (d *localDriver) persistIndex() {
 	err = json.NewEncoder(f).Encode(d.index)
 	d.indexM.RUnlock()
 	if err != nil {
-		log.Errorf("persisting storage index at %s: %w", d.storageRoot, err)
+		log.Error("persisting storage index", zap.String("location", d.storageRoot), zap.Error(err))
 	}
 }

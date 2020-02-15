@@ -7,6 +7,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/api"
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	"github.com/dimitarvdimitrov/sporkfs/log"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -88,7 +89,7 @@ func (r grpcAsyncReader) run() {
 		if err != nil {
 			_ = r.in.CloseWithError(err)
 			if err != io.EOF {
-				log.Errorf("reading remote file: %s", err)
+				log.Error("reading remote file", zap.Error(err))
 			}
 			return
 		}
@@ -96,7 +97,7 @@ func (r grpcAsyncReader) run() {
 		chunk := reply.GetContent()
 		_, err = r.in.Write(chunk)
 		if err != nil {
-			log.Warnf("couldn't receive file chunk from remote peer: %s", err)
+			log.Warn("couldn't receive file chunk from remote peer", zap.Error(err))
 		}
 	}
 }

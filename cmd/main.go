@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/seaweedfs/fuse"
 	"github.com/seaweedfs/fuse/fs"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -30,7 +32,7 @@ func main() {
 	deletedFiles := make(chan *store.File)
 	sporkService, err := spork.New(ctx, cancel, cfg, invFiles, deletedFiles)
 	if err != nil {
-		log.Fatal("inti: ", err)
+		log.Fatal("init", zap.Error(err))
 	}
 
 	vfs := sfuse.NewFS(&sporkService, invFiles, deletedFiles)
@@ -63,30 +65,30 @@ func unmountWhenDone(ctx context.Context, mountpoint string) {
 	go func() {
 		<-ctx.Done()
 		if err := fuse.Unmount(mountpoint); err != nil {
-			log.Errorf("unmount: %s", err)
+			log.Error("unmount", zap.Error(err))
 		}
 	}()
 }
 
 func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint string, vfs sfuse.Fs) {
-	log.Infof("mounting sporkfs at %s...", mountpoint)
+	log.Info(fmt.Sprintf("mounting sporkfs at %s...", mountpoint))
 	fuseConn, err := fuse.Mount(mountpoint,
 		fuse.FSName("sporkfs"),
 		fuse.VolumeName("sporkfs"),
 	)
 	if err != nil {
-		log.Fatal("couldn't mount: ", err)
+		log.Fatal("couldn't mount", zap.Error(err))
 	}
-	log.Infof("mount successful")
+	log.Info("mount successful")
 
 	fuseServer := fs.New(fuseConn, &fs.Config{
-		Debug: func(m interface{}) { log.Debug(m) },
+		Debug: func(m interface{}) { log.Debug(fmt.Sprint(m)) },
 	})
 
 	go func() {
 		log.Info("sporkfs started")
 		if err := fuseServer.Serve(vfs); err != nil {
-			log.Error("serve: ", err)
+			log.Error("serve", zap.Error(err))
 		}
 		cancel()
 	}()
@@ -98,7 +100,7 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 func parseConfig(dir string) (cfg spork.Config) {
 	_, err := toml.DecodeFile(dir, &cfg)
 	if err != nil {
-		log.Fatalf("decoding config: %s", err)
+		log.Fatal("decoding config", zap.Error(err))
 	}
 	return
 }

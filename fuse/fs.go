@@ -63,7 +63,7 @@ func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
 				_ = server.InvalidateEntry(p, file.Name)
 				_ = server.InvalidateNodeData(p)
 			}
-			log.Debugf("invalidated file and its parent entry, id:%d, hash:%d, name:%s", file.Id, file.Hash, file.Name)
+			log.Debug("invalidated file and its parent entry", log.Id(file.Id), log.Hash(file.Hash), log.Name(file.Name))
 		case <-ctx.Done():
 			return
 		}
@@ -79,7 +79,7 @@ func (f Fs) WatchDeletions(ctx context.Context) {
 			}
 
 			f.reg.deleteNode(file.Id)
-			log.Debugf("invalidated deleted file, id:%d", file.Id)
+			log.Debug("invalidated deleted file", log.Id(file.Id))
 		case <-ctx.Done():
 			return
 		}

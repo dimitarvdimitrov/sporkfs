@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
+	"go.uber.org/zap"
 )
 
 type index map[uint64]map[uint64]string // maps file ids to location on the local file system
@@ -15,11 +16,11 @@ type index map[uint64]map[uint64]string // maps file ids to location on the loca
 // restoreIndex decodes the stored index at the location and returns it.
 // If it doesn't exist, it returns an empty
 func restoreIndex(location string) index {
-	log.Debugf("restoring file index from %s", location)
+	log.Debug("restoring file index", zap.String("from", location))
 	index := make(index)
 	f, err := os.Open(location + "/index")
 	if err != nil {
-		log.Errorf("couldn't load persisted index, starting fresh: %s", err)
+		log.Error("couldn't load persisted index, starting fresh: %s", zap.Error(err))
 		return map[uint64]map[uint64]string{}
 	}
 	defer f.Close()
@@ -27,7 +28,7 @@ func restoreIndex(location string) index {
 	d := json.NewDecoder(f)
 	err = d.Decode(&index)
 	if err != nil {
-		log.Errorf("couldn't load persisted index, starting fresh: %s", err)
+		log.Error("couldn't load persisted index, starting fresh: %s", zap.Error(err))
 		return map[uint64]map[uint64]string{}
 	}
 	return index

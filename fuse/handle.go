@@ -9,6 +9,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/seaweedfs/fuse"
+	"go.uber.org/zap"
 )
 
 type handle struct {
@@ -100,13 +101,13 @@ func (h handle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	var err error
 	if h.r != nil {
 		if rErr := h.r.Close(); rErr != nil {
-			log.Errorf("closing reader %d: %s", fId, rErr)
+			log.Error("closing reader", log.Id(fId), zap.Error(rErr))
 			err = rErr
 		}
 	}
 	if h.w != nil {
 		if wErr := h.w.Close(); wErr != nil {
-			log.Errorf("closing writer %d: %s", fId, wErr)
+			log.Error("closing writer", log.Id(fId), zap.Error(wErr))
 			err = wErr
 		}
 	}

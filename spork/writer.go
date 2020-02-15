@@ -9,6 +9,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
+	"go.uber.org/zap"
 )
 
 type sizer interface {
@@ -68,7 +69,6 @@ func (w *writer) Write(p []byte) (int, error) {
 }
 
 func (w *writer) Close() error {
-	log.Debug("closing writer") // TODO remove
 	w.f.Lock()
 	defer w.f.Unlock()
 
@@ -93,6 +93,6 @@ func (w *writer) Close() error {
 	w.f.Mtime, w.f.Atime = now, now
 
 	w.invalidate <- w.f
-	log.Debug("successfully closed file (including raft and invalidation)", "id", w.f.Id)
+	log.Debug("successfully closed file (including raft and invalidation)", zap.Uint64("id", w.f.Id))
 	return nil
 }

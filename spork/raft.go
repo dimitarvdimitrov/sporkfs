@@ -6,6 +6,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
+	"go.uber.org/zap"
 )
 
 func (s Spork) watchRaft() {
@@ -13,10 +14,10 @@ func (s Spork) watchRaft() {
 		switch msg := entry.Message.(type) {
 		case *raftpb.Entry_Add:
 			req := msg.Add
-			log.Debugf("processing add raft entry id:%d, name:%s", req.Id, req.Name)
+			log.Debug("processing add raft entry", log.Id(req.Id), log.Name(req.Name))
 			parent, err := s.inventory.Get(req.ParentId)
 			if err != nil {
-				log.Errorf("actioning raft committed entry: %s", err)
+				log.Error("actioning raft committed entry", zap.Error(err))
 				break
 			}
 			parent.Lock()
@@ -28,7 +29,7 @@ func (s Spork) watchRaft() {
 			if err = s.inventory.Add(file); err != nil {
 				file.Unlock()
 				parent.Unlock()
-				log.Errorf("adding new raft file to inventory: %s", err)
+				log.Error("adding new raft file to inventory", zap.Error(err))
 				break
 			}
 
@@ -38,7 +39,7 @@ func (s Spork) watchRaft() {
 
 			if s.peers.IsLocalFile(file.Id) {
 				if err = s.createInCacheOrData(file, parent); err != nil {
-					log.Errorf("can't add committed raft file locally: %s", err)
+					log.Error("can't add committed raft file locally", zap.Error(err))
 				}
 			}
 			s.invalid <- parent
@@ -46,34 +47,34 @@ func (s Spork) watchRaft() {
 			file.Unlock()
 		case *raftpb.Entry_Rename:
 			req := msg.Rename
-			log.Debugf("processing rename raft entry id:%d, new_name:%s", req.Id, req.NewName)
+			log.Debug("processing rename raft entry", log.Id(req.Id), zap.String("new_name", req.NewName))
 
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
-				log.Errorf("rename file for raft (file): %s", err)
+				log.Error("rename file for raft (file)", zap.Error(err))
 			}
 			oldParent, err := s.inventory.Get(req.OldParentId)
 			if err != nil {
-				log.Errorf("rename file for raft (old parent): %s", err)
+				log.Error("rename file for raft (old parent)", zap.Error(err))
 			}
 			newParent, err := s.inventory.Get(req.NewParentId)
 			if err != nil {
-				log.Errorf("rename file for raft (new parent): %s", err)
+				log.Error("rename file for raft (new parent)", zap.Error(err))
 			}
 
 			s.renameLocally(file, newParent, oldParent, req.NewName)
 			s.invalid <- file
 		case *raftpb.Entry_Delete:
 			req := msg.Delete
-			log.Debugf("processing delete raft entry id:%d", req.Id)
+			log.Debug("processing delete raft entry", log.Id(req.Id))
 
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
-				log.Errorf("delete file for raft (file): %s", err)
+				log.Error("delete file for raft (file)", zap.Error(err))
 			}
 			parent, err := s.inventory.Get(req.ParentId)
 			if err != nil {
-				log.Errorf("delete file for raft (old parent): %s", err)
+				log.Error("delete file for raft (old parent)", zap.Error(err))
 			}
 			file.Lock()
 			parent.Lock()
@@ -96,24 +97,24 @@ func (s Spork) watchRaft() {
 			parent.Unlock()
 		case *raftpb.Entry_Change:
 			req := msg.Change
-			log.Debugf("processing change raft entry id:%d, hash:%d", req.Id, req.Hash)
+			log.Debug("processing change raft entry", log.Id(req.Id), log.Hash(req.Hash))
 
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
-				log.Errorf("get updated file for raft: %s", err)
+				log.Error("get updated file for raft", zap.Error(err))
 				break
 			}
 			file.Lock()
 			if peer := s.peers.GetPeerRaft(req.PeerId); s.peers.IsLocalFile(req.Id) {
 				err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, s.data)
 				if err != nil {
-					log.Errorf("transferring changed local file from raft: %s", err)
+					log.Error("transferring changed local file from raft", zap.Error(err))
 				}
 			} else {
 				if s.cache.ContainsAny(req.Id) {
 					err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, s.cache)
 					if err != nil {
-						log.Errorf("transferring changed cached file from raft: %s", err)
+						log.Error("transferring changed cached file from raft", zap.Error(err))
 					}
 				}
 			}

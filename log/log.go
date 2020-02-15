@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var l *zap.SugaredLogger
+var l *zap.Logger
 
 func init() {
 	highPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
@@ -31,51 +31,43 @@ func init() {
 	)
 	logger := zap.New(core)
 	zap.RedirectStdLog(logger)
-	l = logger.Sugar()
+	l = logger
 }
 
 func Sync() {
 	_ = l.Sync()
 }
 
-func Debug(args ...interface{}) {
-	l.Debug(args...)
+func Id(id uint64) zap.Field {
+	return zap.Uint64("id", id)
 }
 
-func Debugf(format string, args ...interface{}) {
-	l.Debugf(format, args...)
+func Hash(h uint64) zap.Field {
+	return zap.Uint64("hash", h)
 }
 
-func Info(args ...interface{}) {
-	l.Info(args...)
+func Name(n string) zap.Field {
+	return zap.String("name", n)
 }
 
-func Infof(format string, args ...interface{}) {
-	l.Infof(format, args...)
+func Debug(msg string, args ...zap.Field) {
+	l.Debug(msg, args...)
 }
 
-func Warn(args ...interface{}) {
-	l.Warn(args...)
+func Info(msg string, args ...zap.Field) {
+	l.Info(msg, args...)
 }
 
-func Warnf(format string, args ...interface{}) {
-	l.Warnf(format, args...)
+func Warn(msg string, args ...zap.Field) {
+	l.Warn(msg, args...)
 }
 
-func Error(args ...interface{}) {
-	l.Error(args...)
+func Error(msg string, args ...zap.Field) {
+	l.Error(msg, args...)
 }
 
-func Errorf(format string, args ...interface{}) {
-	l.Errorf(format, args...)
-}
-
-func Fatal(args ...interface{}) {
-	l.Fatal(args...)
-}
-
-func Fatalf(format string, args ...interface{}) {
-	l.Fatalf(format, args...)
+func Fatal(msg string, args ...zap.Field) {
+	l.Fatal(msg, args...)
 }
 
 type logger struct {
@@ -83,7 +75,7 @@ type logger struct {
 }
 
 func Logger() *logger {
-	return &logger{l}
+	return &logger{l.Sugar()}
 }
 
 func (logger *logger) Warning(args ...interface{}) {

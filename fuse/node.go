@@ -2,11 +2,9 @@ package fuse
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
-	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/seaweedfs/fuse"
@@ -152,12 +150,7 @@ func (n node) create(ctx context.Context, name string, mode os.FileMode) (*store
 }
 
 func (n node) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
-	newParent, ok := newDir.(node)
-	if !ok {
-		err := fmt.Errorf("passed node to node.Rename() is of type %T, not %T", newDir, n)
-		log.Error(err)
-		return err
-	}
+	newParent := newDir.(node)
 	file, err := n.spork.Lookup(n.File, req.OldName)
 	if err != nil {
 		return parseError(err)

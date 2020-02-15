@@ -10,6 +10,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/golang/protobuf/proto"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -46,7 +47,7 @@ func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
 		return err
 	})
 	if err != nil {
-		log.Fatalf("couldn't dial peer: %s", err)
+		log.Fatal("couldn't dial peer", zap.Error(err))
 	}
 
 	raftNode := raft.StartNode(config, raftPeers)
@@ -109,7 +110,7 @@ func (s *node) serveProposals() {
 			ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 			err = s.raft.Propose(ctx, data)
 			if err != nil {
-				log.Errorf("error proposing in raft: %s", err)
+				log.Error("error proposing in raft", zap.Error(err))
 			}
 		case <-s.done:
 			return
@@ -120,17 +121,17 @@ func (s *node) serveProposals() {
 func (s *node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.Entry, snapshot etcdraftpb.Snapshot) {
 	if !raft.IsEmptyHardState(state) {
 		if err := s.storage.SetHardState(state); err != nil {
-			log.Errorf("saving hard state: %s", err)
+			log.Error("saving hard state", zap.Error(err))
 		}
 	}
 
 	if err := s.storage.Append(entries); err != nil {
-		log.Errorf("appending entries: %s", err)
+		log.Error("appending entries", zap.Error(err))
 	}
 
 	if !raft.IsEmptySnap(snapshot) {
 		if err := s.storage.ApplySnapshot(snapshot); err != nil {
-			log.Errorf("saving hard state: %s", err)
+			log.Error("saving hard state", zap.Error(err))
 		}
 	}
 }
@@ -142,7 +143,7 @@ func (s *node) send(messages []etcdraftpb.Message) {
 		peerAddr := s.peers.getPeer(int(m.To) - 1) // the -1 is accounting for raft ids starting from 1
 		peer, ok := s.clients[peerAddr]
 		if !ok {
-			log.Errorf("couldn't find peer to send message; message: %#v", m)
+			log.Error("couldn't find peer to send message", zap.Any("message", m))
 			continue
 		}
 		wg.Add(1)
@@ -155,11 +156,11 @@ func (s *node) send(messages []etcdraftpb.Message) {
 }
 
 func (s *node) processSnapshot(snapshot etcdraftpb.Snapshot) {
-	log.Debugf("processing raft snapshot %s", string(snapshot.Data))
+	log.Debug("processing raft snapshot")
 }
 
 func (s *node) process(e etcdraftpb.Entry) {
-	log.Debugf("processing raft entry")
+	log.Debug("processing raft entry")
 	switch e.Type {
 	case etcdraftpb.EntryConfChange:
 		var cc etcdraftpb.ConfChange
@@ -169,7 +170,7 @@ func (s *node) process(e etcdraftpb.Entry) {
 	case etcdraftpb.EntryNormal:
 		msg := &raftpb.Entry{}
 		if err := proto.Unmarshal(e.Data, msg); err != nil {
-			log.Errorf("couldn't decode entry %q", string(e.Data))
+			log.Error("couldn't decode entry", zap.ByteString("entry", e.Data))
 			break
 		}
 		s.commitC <- msg
