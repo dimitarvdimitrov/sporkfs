@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type index map[uint64]map[uint64]string // maps file ids to location on the local file system
+type index map[uint64]map[uint64]string // maps file ids to location
 
 // restoreIndex decodes the stored index at the location and returns it.
 // If it doesn't exist, it returns an empty

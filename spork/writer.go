@@ -72,7 +72,7 @@ func (w *writer) Write(p []byte) (int, error) {
 func (w *writer) Close() error {
 	w.f.Lock()
 	defer w.f.Unlock()
-
+	log.Debug("closing handle for file", log.Id(w.f.Id))
 	if w.f.Hash != w.startingHash {
 		return store.ErrStaleHandle
 	}
@@ -82,10 +82,20 @@ func (w *writer) Close() error {
 
 	if !w.changer.Change(w.f.Id, newHash, 0, size) {
 		w.fileRemover.Remove(w.f.Id, newHash)
+		log.Error("voting change in raft failed",
+			log.Id(w.f.Id),
+			zap.Uint64("old_hash", w.f.Hash),
+			zap.Uint64("new_hash", newHash),
+		)
 		return fmt.Errorf("couldn't vote file change in raft; changes discarded")
 	}
 
 	if w.f.Hash != newHash {
+		log.Debug("removing old version of file",
+			log.Id(w.f.Id),
+			zap.Uint64("old_hash", w.f.Hash),
+			zap.Uint64("new_hash", newHash),
+		)
 		w.fileRemover.Remove(w.f.Id, w.f.Hash)
 	}
 	w.f.Hash = newHash

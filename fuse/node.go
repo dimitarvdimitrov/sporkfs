@@ -76,9 +76,6 @@ func (n node) Lookup(ctx context.Context, name string) (fs.Node, error) {
 }
 
 func (n node) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	n.File.Lock()
-	defer n.File.Unlock()
-
 	var r spork.ReadCloser
 	var w spork.WriteCloser
 

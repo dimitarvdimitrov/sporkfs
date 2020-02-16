@@ -21,7 +21,7 @@ var (
 type localDriver struct {
 	storageRoot string
 	indexM      *sync.RWMutex
-	index       index
+	index       index // the values in the index are the relative locations to the storageRoot
 }
 
 func NewLocalDriver(location string) (*localDriver, error) {
@@ -61,7 +61,6 @@ func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 	d.indexM.Lock()
 	if _, ok := d.index[id]; ok {
 		d.indexM.Unlock()
-		go removeFromDisk(filePath)
 		return 0, store.ErrFileAlreadyExists
 	}
 	d.index[id] = map[uint64]string{hash: filePath}
@@ -87,21 +86,13 @@ func hashPath(path string) uint64 {
 func hashHandle(file *os.File) uint64 {
 	hash, err := highwayhash.New64(hashKey)
 	if err != nil {
-		// retry
-		hash, err = highwayhash.New64(hashKey)
-		if err != nil {
-			log.Error("couldn't start hashing file", zap.Error(err))
-			return 0
-		}
+		log.Error("couldn't start hashing file", zap.Error(err))
+		return 0
 	}
 
 	_, err = io.Copy(hash, file)
 	if err != nil {
-		// retry
-		_, err = io.Copy(hash, file)
-		if err != nil {
-			log.Error("couldn't hash file", zap.Error(err))
-		}
+		log.Error("couldn't hash file", zap.Error(err))
 	}
 	return hash.Sum64()
 }
@@ -127,22 +118,24 @@ func (d *localDriver) Remove(id, hash uint64) {
 	}
 
 	d.indexM.Lock()
-	path := d.index[id][hash]
+	location := d.index[id][hash]
 	delete(d.index[id], hash)
 	if len(d.index[id]) == 0 {
 		delete(d.index, id)
 	}
 	d.indexM.Unlock()
 
-	if path != "" {
-		go removeFromDisk(d.storageRoot + path)
+	if location != "" {
+		go removeFromDisk(d.storageRoot + location)
 	}
 }
 
 func removeFromDisk(path string) {
 	err := os.Remove(path)
 	if err != nil {
-		log.Error("couldn't remove file", zap.Error(err))
+		log.Error("couldn't remove file", zap.Error(err), zap.String("path", path))
+	} else {
+		log.Debug("removed file", zap.String("path", path))
 	}
 }
 
@@ -172,20 +165,6 @@ func (d *localDriver) newSegReader(f *os.File) *segmentedReader {
 }
 
 func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
-	d.indexM.RLock()
-	fileLocation, exists := d.index[id][hash]
-	d.indexM.RUnlock()
-	if !exists {
-		return nil, nil, store.ErrNoSuchFile
-	}
-
-	newLocation := newStorageLocation(id, hash)
-	newFilePath := d.storageRoot + newLocation
-	err := duplicateFile(d.storageRoot+fileLocation, newFilePath)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
 		flags |= os.O_TRUNC
 	}
@@ -200,7 +179,7 @@ func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
 
 	flags |= os.O_RDWR
 
-	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
+	file, newLocation, err := d.handleForWriting(id, hash, flags)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -211,22 +190,35 @@ func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
 	return reader, writer, nil
 }
 
-func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
+// handleForWriting duplicates the file with the given id and hash and returns an open
+// file handle to the new duplicate with the provided flags. It also return the location of the file
+// relative to the storage root
+func (d *localDriver) handleForWriting(id, hash uint64, flags int) (*os.File, string, error) {
 	d.indexM.RLock()
-	oldLocation, exists := d.index[id][hash]
+	oldPath, exists := d.index[id][hash]
 	d.indexM.RUnlock()
 	if !exists {
-		return nil, store.ErrNoSuchFile
+		return nil, "", store.ErrNoSuchFile
 	}
-	oldFilePath := d.storageRoot + oldLocation
+	oldFilePath := d.storageRoot + oldPath
 
 	newLocation := newStorageLocation(id, hash)
 	newFilePath := d.storageRoot + newLocation
 	err := duplicateFile(oldFilePath, newFilePath)
 	if err != nil {
-		return nil, err
+		log.Error("error while duplicating file",
+			log.Id(id), log.Hash(hash),
+			zap.String("old_path", oldFilePath),
+			zap.String("new_path", newFilePath),
+			zap.Error(err),
+		)
+		return nil, "", err
 	}
+	f, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
+	return f, newLocation, err
+}
 
+func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
 		flags |= os.O_TRUNC
 	}
@@ -237,7 +229,7 @@ func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 
 	flags |= os.O_WRONLY
 
-	file, err := os.OpenFile(newFilePath, flags, store.ModeRegularFile)
+	file, newLocation, err := d.handleForWriting(id, hash, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -247,20 +239,25 @@ func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 	return segWriter, nil
 }
 
-func (d *localDriver) newSegWriter(id, oldHash uint64, file *os.File, storageLocation string) *segmentedWriter {
+func (d *localDriver) newSegWriter(id, oldHash uint64, file *os.File, relativeLocation string) *segmentedWriter {
 	var newHash uint64
-	absoluteLocation := file.Name()
+	absolutePath := file.Name()
 
 	onClose := func() {
 		_ = file.Close()
 
-		newHash = hashPath(absoluteLocation)
+		newHash = hashPath(absolutePath)
 		if newHash == oldHash {
-			removeFromDisk(absoluteLocation)
+			log.Debug("pruning file with repeated hash",
+				log.Id(id),
+				log.Hash(oldHash),
+				zap.String("path", absolutePath),
+			)
+			go removeFromDisk(absolutePath)
 		} else {
 			d.indexM.Lock()
 			defer d.indexM.Unlock()
-			d.index[id][newHash] = storageLocation
+			d.index[id][newHash] = relativeLocation
 		}
 	}
 
@@ -282,19 +279,24 @@ func syncer(f *os.File) func() {
 	}
 }
 
-func duplicateFile(oldPath, newPath string) error {
-	source, err := os.Open(oldPath)
+func duplicateFile(oldAbsolute, newAbsolute string) error {
+	if _, err := os.Stat(newAbsolute); err == nil {
+		return nil
+	}
+
+	source, err := os.Open(oldAbsolute)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
 
-	destination, err := os.Create(newPath)
+	destination, err := os.Create(newAbsolute)
 	if err != nil {
 		return err
 	}
 	defer destination.Close()
-	_, err = io.Copy(destination, source)
+	// we sacrifice some memory to make it faster
+	_, err = io.CopyBuffer(destination, source, make([]byte, 1024*1024))
 	return err
 }
 

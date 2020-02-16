@@ -118,6 +118,10 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 }
 
 func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
+	f.Lock()
+	defer f.Unlock()
+	log.Debug("opening file for read/write", log.Id(f.Id), log.Hash(f.Hash))
+
 	driver := s.data
 	if !s.peers.IsLocalFile(f.Id) {
 		log.Debug("reading remote file for read/write")
@@ -152,6 +156,9 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 }
 
 func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
+	f.Lock()
+	defer f.Unlock()
+
 	driver := s.data
 	if !s.peers.IsLocalFile(f.Id) {
 		log.Debug("reading remote file for read")
