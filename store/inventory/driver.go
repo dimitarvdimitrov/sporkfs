@@ -1,12 +1,11 @@
 package inventory
 
 import (
-	"encoding/binary"
+	"math/rand"
 	"os"
 	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/store"
-	"github.com/google/uuid"
 )
 
 type Driver struct {
@@ -85,17 +84,15 @@ func (d Driver) Remove(id uint64) {
 }
 
 // NewId returns a new ID. It guarantees that at the time of creation this ID is unique among all files.
-func (d Driver) NewId() uint64 {
+func (d Driver) NewId() (id uint64) {
 	d.m.RLock()
 	defer d.m.RUnlock()
 
 	for {
-		uuidBytes, _ := uuid.New().MarshalBinary()
-		id := binary.BigEndian.Uint64(uuidBytes[:])
+		id = rand.Uint64()
 
-		if _, exists := d.catalog[id]; exists {
-			continue
+		if _, exists := d.catalog[id]; !exists {
+			return
 		}
-		return id
 	}
 }

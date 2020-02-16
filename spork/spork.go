@@ -188,12 +188,7 @@ func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) erro
 		return nil
 	}
 
-	v, err := dst.Add(id, store.ModeRegularFile)
-	if err != nil {
-		return fmt.Errorf("adding file to destiantion id:%d, hash:%d, err:%w", id, version, err)
-	}
-
-	w, err := dst.Writer(id, v, 0)
+	w, err := dst.Writer(id, 0, os.O_TRUNC)
 	if err != nil {
 		return fmt.Errorf("writing file to destination id:%d, hash:%d, err:%w", id, version, err)
 	}
@@ -255,14 +250,13 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 
 	err := s.inventory.Add(f)
 	if err != nil {
-		s.raft.Delete(f.Id, parent.Id)
+		log.Error("creating file locally", zap.Error(err))
 		return nil, err
 	}
 
 	err = s.createInCacheOrData(f, parent)
 	if err != nil {
-		s.inventory.Remove(f.Id)
-		s.raft.Delete(f.Id, parent.Id)
+		log.Error("creating file locally", zap.Error(err))
 		return nil, err
 	}
 
@@ -302,6 +296,17 @@ func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 }
 
 func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) error {
+	oldParent.Lock()
+	defer oldParent.Unlock()
+
+	file.Lock()
+	defer file.Unlock()
+
+	if oldParent.Id != newParent.Id {
+		newParent.Lock()
+		defer newParent.Unlock()
+	}
+
 	if !s.raft.Rename(file.Id, oldParent.Id, newParent.Id, newName) {
 		return fmt.Errorf("couldn't vote raft change")
 	}
@@ -310,32 +315,24 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 	return nil
 }
 
-// TODO move the locking here to whoever calls renameLocally
 func (s Spork) renameLocally(file *store.File, newParent *store.File, oldParent *store.File, newName string) {
-	oldParent.Lock()
-	defer oldParent.Unlock()
-
-	file.Lock()
-	defer file.Unlock()
-
 	file.Name = newName
 
 	if oldParent.Id != newParent.Id {
-		newParent.Lock()
-		defer newParent.Unlock()
-
 		for i, c := range oldParent.Children {
 			if c.Id == file.Id {
 				oldParent.Children = append(oldParent.Children[:i], oldParent.Children[i+1:]...)
+				oldParent.Size--
 				break
 			}
 		}
 
 		newParent.Children = append(newParent.Children, file)
+		newParent.Size++
 	}
 }
 
-func (s Spork) Delete(file, parent *store.File) error {
+func (s Spork) Delete(file *store.File) error {
 	if len(file.Children) != 0 {
 		return store.ErrDirectoryNotEmpty
 	}
@@ -343,18 +340,19 @@ func (s Spork) Delete(file, parent *store.File) error {
 	file.Lock()
 	defer file.Unlock()
 
+	parent := file.Parent
 	parent.Lock()
 	defer parent.Unlock()
 
-	index := -1
-	for i, c := range parent.Children {
+	found := false
+	for _, c := range parent.Children {
 		if c.Id == file.Id {
-			index = i
+			found = true
 			break
 		}
 	}
 
-	if index == -1 {
+	if !found {
 		return store.ErrNoSuchFile
 	}
 
@@ -362,17 +360,23 @@ func (s Spork) Delete(file, parent *store.File) error {
 		return fmt.Errorf("couldn't vote removal in raft")
 	}
 
-	s.deleteLocally(file, parent, index)
+	s.deleteLocally(file)
 
 	return nil
 }
 
-func (s Spork) deleteLocally(file *store.File, parent *store.File, index int) {
+func (s Spork) deleteLocally(file *store.File) {
 	s.data.Remove(file.Id, file.Hash)
 	s.cache.Remove(file.Id, file.Hash)
 	s.inventory.Remove(file.Id)
-	parent.Children = append(parent.Children[:index], parent.Children[index+1:]...)
-	parent.Size--
+
+	for i, c := range file.Parent.Children {
+		if c.Id == file.Id {
+			file.Parent.Children = append(file.Parent.Children[:i], file.Parent.Children[i+1:]...)
+			file.Parent.Size--
+			break
+		}
+	}
 }
 
 func (s Spork) Close() {

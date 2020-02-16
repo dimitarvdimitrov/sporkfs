@@ -161,7 +161,7 @@ func (n node) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	if err != nil {
 		return err
 	}
-	return parseError(n.spork.Delete(file, n.File))
+	return parseError(n.spork.Delete(file))
 }
 
 // seaweedfs also do this so fuck it. This method is supposed to be on the handle, and there is a TO DO in

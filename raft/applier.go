@@ -23,7 +23,7 @@ type applier struct {
 	done     chan struct{}
 }
 
-func newWait(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*applier, <-chan *raftpb.Entry) {
+func newApplier(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*applier, <-chan *raftpb.Entry) {
 	syncC := make(chan *raftpb.Entry)
 	w := &applier{
 		proposeC: proposals,

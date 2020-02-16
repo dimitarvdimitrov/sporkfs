@@ -53,18 +53,28 @@ func (s Spork) watchRaft() {
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
 				log.Error("rename file for raft (file)", zap.Error(err))
+				break
 			}
-			oldParent, err := s.inventory.Get(req.OldParentId)
-			if err != nil {
-				log.Error("rename file for raft (old parent)", zap.Error(err))
-			}
+			oldParent := file.Parent
 			newParent, err := s.inventory.Get(req.NewParentId)
 			if err != nil {
 				log.Error("rename file for raft (new parent)", zap.Error(err))
+				break
+			}
+			file.Lock()
+			oldParent.Lock()
+			if oldParent.Id != newParent.Id {
+				newParent.Lock()
 			}
 
 			s.renameLocally(file, newParent, oldParent, req.NewName)
 			s.invalid <- file
+
+			file.Unlock()
+			oldParent.Unlock()
+			if oldParent.Id != newParent.Id {
+				newParent.Unlock()
+			}
 		case *raftpb.Entry_Delete:
 			req := msg.Delete
 			log.Debug("processing delete raft entry", log.Id(req.Id))
@@ -72,30 +82,14 @@ func (s Spork) watchRaft() {
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
 				log.Error("delete file for raft (file)", zap.Error(err))
-			}
-			parent, err := s.inventory.Get(req.ParentId)
-			if err != nil {
-				log.Error("delete file for raft (old parent)", zap.Error(err))
+				break
 			}
 			file.Lock()
-			parent.Lock()
-
-			index := -1
-			for i, c := range parent.Children {
-				if c.Id == file.Id {
-					index = i
-					break
-				}
-			}
-
-			if index == -1 {
-				log.Error("couldn't find child in parent file to remove (raft)")
-			} else {
-				s.deleteLocally(file, parent, index)
-			}
+			file.Parent.Lock()
+			s.deleteLocally(file)
 			s.deleted <- file
 			file.Unlock()
-			parent.Unlock()
+			file.Parent.Unlock()
 		case *raftpb.Entry_Change:
 			req := msg.Change
 			log.Debug("processing change raft entry", log.Id(req.Id), log.Hash(req.Hash))
@@ -105,27 +99,31 @@ func (s Spork) watchRaft() {
 				log.Error("get updated file for raft", zap.Error(err))
 				break
 			}
+
 			file.Lock()
+			oldHash := file.Hash
+			now := time.Now()
+			file.Hash = req.Hash
+			file.Size = int64(req.Offset) + req.Size
+			file.Mtime, file.Atime = now, now
+
 			peer := s.peers.GetPeerRaft(req.PeerId)
+
 			if s.peers.IsLocalFile(req.Id) || s.cache.ContainsAny(req.Id) {
 				var dest data.Driver = s.cache
 				if s.peers.IsLocalFile(req.Id) {
 					dest = s.data
 				}
 
-				if err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, dest); err != nil {
+				if err := s.updateLocalFile(req.Id, oldHash, req.Hash, peer, dest); err != nil {
 					log.Error("transferring changed file from raft", zap.Error(err))
 				} else {
-					if file.Hash != req.Hash {
-						dest.Remove(file.Id, file.Hash)
+					if oldHash != req.Hash {
+						dest.Remove(file.Id, oldHash)
 					}
 				}
 			}
 
-			now := time.Now()
-			file.Hash = req.Hash
-			file.Size = int64(req.Offset) + req.Size
-			file.Mtime, file.Atime = now, now
 			s.invalid <- file
 			file.Unlock()
 		}

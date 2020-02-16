@@ -2,7 +2,6 @@ package data
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -48,9 +47,9 @@ func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
 		return 0, nil // noop if it's a dir
 	}
 
-	filePath := newStorageLocation(id, 0)
+	filePath := generateStorageLocation(id, 0)
 
-	f, err := os.OpenFile(d.storageRoot+filePath, os.O_CREATE|os.O_EXCL, mode)
+	f, err := os.OpenFile(d.storageRoot+filePath, os.O_CREATE, mode)
 	if err != nil {
 		return 0, err
 	}
@@ -191,9 +190,17 @@ func (d *localDriver) Open(id, hash uint64, flags int) (Reader, Writer, error) {
 }
 
 // handleForWriting duplicates the file with the given id and hash and returns an open
-// file handle to the new duplicate with the provided flags. It also return the location of the file
-// relative to the storage root
+// file handle to the new duplicate with the provided flags. If the flags contains os.O_TRUNC
+// or the hash is 0, there will be no copying - just a new empty file will be created.
+// It also returns the location of the file relative to the storage root.
 func (d *localDriver) handleForWriting(id, hash uint64, flags int) (*os.File, string, error) {
+	if hash == 0 || flags&os.O_TRUNC != 0 {
+		newLocation := generateStorageLocation(id, hash)
+		newFilePath := d.storageRoot + newLocation
+		f, err := os.OpenFile(newFilePath, flags|os.O_CREATE, store.ModeRegularFile)
+		return f, newLocation, err
+	}
+
 	d.indexM.RLock()
 	oldPath, exists := d.index[id][hash]
 	d.indexM.RUnlock()
@@ -202,7 +209,7 @@ func (d *localDriver) handleForWriting(id, hash uint64, flags int) (*os.File, st
 	}
 	oldFilePath := d.storageRoot + oldPath
 
-	newLocation := newStorageLocation(id, hash)
+	newLocation := generateStorageLocation(id, hash)
 	newFilePath := d.storageRoot + newLocation
 	err := duplicateFile(oldFilePath, newFilePath)
 	if err != nil {
@@ -257,6 +264,9 @@ func (d *localDriver) newSegWriter(id, oldHash uint64, file *os.File, relativeLo
 		} else {
 			d.indexM.Lock()
 			defer d.indexM.Unlock()
+			if d.index[id] == nil {
+				d.index[id] = make(map[uint64]string)
+			}
 			d.index[id][newHash] = relativeLocation
 		}
 	}
@@ -315,24 +325,4 @@ func (d *localDriver) Size(id, hash uint64) int64 {
 	}
 
 	return info.Size()
-}
-
-func (d *localDriver) Sync() {
-	d.persistIndex()
-}
-
-func (d *localDriver) persistIndex() {
-	f, err := os.Create(d.storageRoot + "/index")
-	if err != nil {
-		log.Error("couldn't persist index", zap.String("location", d.storageRoot), zap.Error(err))
-		return
-	}
-	defer f.Close()
-
-	d.indexM.RLock()
-	err = json.NewEncoder(f).Encode(d.index)
-	d.indexM.RUnlock()
-	if err != nil {
-		log.Error("persisting storage index", zap.String("location", d.storageRoot), zap.Error(err))
-	}
 }

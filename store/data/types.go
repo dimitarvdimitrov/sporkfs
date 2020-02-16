@@ -21,10 +21,13 @@ type Driver interface {
 
 // Open returns a reader and a writer, both using the same representation of the file
 // locally. If one of them is closed, the other one won't be usable. Both must be closed.
+// If the version is 0, an empty file will be created and returned.
 type ReadWriterer interface {
 	Open(id, version uint64, flags int) (Reader, Writer, error)
 }
 
+// Writerer will return a Writer to the file and version with the flags.
+// If the version is 0, a new empty file will be created and returned.
 type Writerer interface {
 	Writer(id, version uint64, flags int) (Writer, error)
 }
