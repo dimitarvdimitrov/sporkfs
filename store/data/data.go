@@ -300,14 +300,14 @@ func duplicateFile(oldPath, newPath string) error {
 
 func (d *localDriver) Size(id, hash uint64) int64 {
 	d.indexM.RLock()
-	descriptor, err := os.Open(d.storageRoot + d.index[id][hash])
+	f, err := os.Open(d.storageRoot + d.index[id][hash])
 	d.indexM.RUnlock()
 	if err != nil {
 		return 0
 	}
-	defer descriptor.Close()
+	defer f.Close()
 
-	info, err := descriptor.Stat()
+	info, err := f.Stat()
 	if err != nil {
 		return 0
 	}

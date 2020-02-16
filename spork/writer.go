@@ -5,8 +5,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft"
+
+	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"go.uber.org/zap"
@@ -38,7 +39,7 @@ type writer struct {
 	invalidate   chan<- *store.File
 	fileSizer    sizer
 	fileRemover  remover
-	r            raft.Committer
+	changer      raft.Committer
 	w            data.Writer
 }
 
@@ -79,7 +80,7 @@ func (w *writer) Close() error {
 	newHash := w.w.Close()
 	size := w.fileSizer.Size(w.f.Id, newHash)
 
-	if !w.r.Change(w.f.Id, newHash, 0, size) {
+	if !w.changer.Change(w.f.Id, newHash, 0, size) {
 		w.fileRemover.Remove(w.f.Id, newHash)
 		return fmt.Errorf("couldn't vote file change in raft; changes discarded")
 	}

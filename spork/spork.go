@@ -145,7 +145,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			fileRemover:  driver,
 			w:            w,
 			invalidate:   s.invalid,
-			r:            s.raft,
+			changer:      s.raft,
 		},
 	}
 	return rw, nil

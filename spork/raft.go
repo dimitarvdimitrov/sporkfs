@@ -6,6 +6,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
+	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"go.uber.org/zap"
 )
 
@@ -105,23 +106,25 @@ func (s Spork) watchRaft() {
 				break
 			}
 			file.Lock()
-			if peer := s.peers.GetPeerRaft(req.PeerId); s.peers.IsLocalFile(req.Id) {
-				err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, s.data)
-				if err != nil {
-					log.Error("transferring changed local file from raft", zap.Error(err))
+			peer := s.peers.GetPeerRaft(req.PeerId)
+			if s.peers.IsLocalFile(req.Id) || s.cache.ContainsAny(req.Id) {
+				var dest data.Driver = s.cache
+				if s.peers.IsLocalFile(req.Id) {
+					dest = s.data
 				}
-			} else {
-				if s.cache.ContainsAny(req.Id) {
-					err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, s.cache)
-					if err != nil {
-						log.Error("transferring changed cached file from raft", zap.Error(err))
+
+				if err := s.updateLocalFile(req.Id, file.Hash, req.Hash, peer, dest); err != nil {
+					log.Error("transferring changed file from raft", zap.Error(err))
+				} else {
+					if file.Hash != req.Hash {
+						dest.Remove(file.Id, file.Hash)
 					}
 				}
 			}
 
 			now := time.Now()
 			file.Hash = req.Hash
-			file.Size = s.data.Size(file.Id, file.Hash)
+			file.Size = int64(req.Offset) + req.Size
 			file.Mtime, file.Atime = now, now
 			s.invalid <- file
 			file.Unlock()

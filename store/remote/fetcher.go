@@ -94,8 +94,7 @@ func (r grpcAsyncReader) run() {
 			return
 		}
 
-		chunk := reply.GetContent()
-		_, err = r.in.Write(chunk)
+		_, err = r.in.Write(reply.Content)
 		if err != nil {
 			log.Warn("couldn't receive file chunk from remote peer", zap.Error(err))
 		}
