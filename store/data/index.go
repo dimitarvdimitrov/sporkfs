@@ -14,6 +14,7 @@ import (
 type index map[uint64]map[uint64]string // maps file ids to location
 
 func (d *localDriver) Sync() {
+	log.Info("persisting data index")
 	d.persistIndex()
 }
 

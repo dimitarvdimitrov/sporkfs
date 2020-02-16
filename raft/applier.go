@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"context"
 	"math/rand"
 	"sync"
 	"time"
@@ -18,7 +17,7 @@ type applier struct {
 	syncC    chan<- *raftpb.Entry
 
 	l        sync.Mutex
-	wg       sync.WaitGroup
+	wg       *sync.WaitGroup
 	inFlight map[uint64]chan struct{}
 	done     chan struct{}
 }
@@ -31,7 +30,9 @@ func newApplier(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*
 		inFlight: make(map[uint64]chan struct{}),
 		done:     make(chan struct{}),
 		syncC:    syncC,
+		wg:       &sync.WaitGroup{},
 	}
+	w.wg.Add(1)
 	go w.watchCommits()
 	return w, syncC
 }
@@ -44,28 +45,24 @@ func (w *applier) isRegistered(reqId uint64) bool {
 }
 
 func (w *applier) watchCommits() {
+	defer w.wg.Done()
 	for entry := range w.commitC {
 		w.l.Lock()
 		resultC, ok := w.inFlight[entry.Id]
-		if !ok {
-			w.l.Unlock()
-			log.Debug("queuing enforcement of raft entry")
-			w.syncC <- entry
-			continue
+		if ok {
+			log.Debug("queuing confirmation of previously proposed raft entry")
+			select {
+			case resultC <- struct{}{}:
+				close(resultC)
+				w.l.Unlock()
+				continue
+			default:
+			}
 		}
-		log.Debug("queuing confirmation of previously proposed raft entry")
-		resultC <- struct{}{}
-		close(resultC)
-		delete(w.inFlight, entry.Id)
 		w.l.Unlock()
+		log.Debug("queuing enforcement of raft entry")
+		w.syncC <- entry
 	}
-
-	close(w.done)
-	w.l.Lock()
-	for _, c := range w.inFlight {
-		close(c)
-	}
-	w.l.Unlock()
 }
 
 func (w *applier) ProposeChange(id, hash, offset, peer uint64, size int64) bool {
@@ -122,6 +119,12 @@ func (w *applier) ProposeDelete(id, parentId uint64) bool {
 }
 
 func (w *applier) propose(entry *raftpb.Entry) bool {
+	select {
+	case <-w.done:
+		return false
+	default:
+	}
+
 	w.wg.Add(1)
 	defer w.wg.Done()
 
@@ -131,21 +134,26 @@ func (w *applier) propose(entry *raftpb.Entry) bool {
 	w.inFlight[entry.Id] = resultC
 	w.l.Unlock()
 
-	w.proposeC <- entry
-
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*10)
-
-	cancel := func() {
+	defer func() {
 		w.l.Lock()
 		delete(w.inFlight, entry.Id)
 		w.l.Unlock()
-	}
+	}()
+
+	timeout := time.NewTimer(time.Second * 10).C
+
 	select {
 	case <-w.done:
-		cancel()
 		return false
-	case <-ctx.Done():
-		cancel()
+	case <-timeout:
+		return false
+	case w.proposeC <- entry:
+	}
+
+	select {
+	case <-w.done:
+		return false
+	case <-timeout:
 		return false
 	case _, ok := <-resultC:
 		return ok
@@ -161,4 +169,13 @@ func (w *applier) generateId() (id uint64) {
 			return
 		}
 	}
+}
+
+// close will block until the commit channel passed to the applier on creation is closed. It will return false to
+// any pending proposals.
+func (w *applier) close() {
+	close(w.done)
+	w.wg.Wait()
+	close(w.syncC)
+	close(w.proposeC) // not necessary but might as well
 }

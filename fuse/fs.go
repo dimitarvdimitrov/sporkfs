@@ -36,7 +36,9 @@ func (f Fs) Root() (fs.Node, error) {
 }
 
 func (f Fs) Destroy() {
+	log.Info("stopping virtual file system...")
 	f.S.Close()
+	log.Info("stopped vfs")
 }
 
 func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {

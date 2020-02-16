@@ -3,6 +3,8 @@ package raft
 import (
 	"context"
 
+	"github.com/dimitarvdimitrov/sporkfs/log"
+
 	etcdraftpb "github.com/coreos/etcd/raft/raftpb"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
@@ -51,6 +53,8 @@ func (r *Raft) Step(ctx context.Context, e *etcdraftpb.Message) (*raftpb.Empty, 
 }
 
 func (r *Raft) Shutdown() {
+	log.Info("stopping raft...")
 	r.n.close()
-	r.a.wg.Wait()
+	r.a.close()
+	log.Info("stopped raft")
 }

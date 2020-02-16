@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"time"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
@@ -36,15 +36,17 @@ func main() {
 	}
 
 	vfs := sfuse.NewFS(&sporkService, invFiles, deletedFiles)
-
-	startFuseServer(ctx, cancel, cfg.MountPoint, vfs)
-	defer vfs.Destroy()
+	wg := &sync.WaitGroup{}
+	startFuseServer(ctx, cancel, cfg.MountPoint, vfs, wg)
 	handleOsSignals(ctx, cancel)
-	unmountWhenDone(ctx, cfg.MountPoint)
+	unmountWhenDone(ctx, cfg.MountPoint, wg)
 
 	<-ctx.Done()
-	log.Info("stopping spork...")
-	time.Sleep(time.Second * 3) // don't judge me
+
+	log.Info("shutting down...")
+	vfs.Destroy()
+	wg.Wait()
+	log.Info("bye-bye")
 }
 
 func handleOsSignals(ctx context.Context, cancel context.CancelFunc) {
@@ -61,16 +63,18 @@ func handleOsSignals(ctx context.Context, cancel context.CancelFunc) {
 	}()
 }
 
-func unmountWhenDone(ctx context.Context, mountpoint string) {
+func unmountWhenDone(ctx context.Context, mountpoint string, wg *sync.WaitGroup) {
+	wg.Add(1)
 	go func() {
 		<-ctx.Done()
 		if err := fuse.Unmount(mountpoint); err != nil {
 			log.Error("unmount", zap.Error(err))
 		}
+		wg.Done()
 	}()
 }
 
-func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint string, vfs sfuse.Fs) {
+func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint string, vfs sfuse.Fs, wg *sync.WaitGroup) {
 	log.Info(fmt.Sprintf("mounting sporkfs at %s...", mountpoint))
 	fuseConn, err := fuse.Mount(mountpoint,
 		fuse.FSName("sporkfs"),
@@ -85,11 +89,13 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 		Debug: func(m interface{}) { log.Debug(fmt.Sprint(m)) },
 	})
 
+	wg.Add(1)
 	go func() {
 		log.Info("sporkfs started")
 		if err := fuseServer.Serve(vfs); err != nil {
 			log.Error("serve", zap.Error(err))
 		}
+		wg.Done()
 		cancel()
 	}()
 

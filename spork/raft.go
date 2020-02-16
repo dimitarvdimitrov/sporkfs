@@ -11,6 +11,7 @@ import (
 )
 
 func (s Spork) watchRaft() {
+	defer s.wg.Done()
 	for entry := range s.commitC {
 		switch msg := entry.Message.(type) {
 		case *raftpb.Entry_Add:

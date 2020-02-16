@@ -16,14 +16,16 @@ import (
 
 type node struct {
 	raft    raft.Node
-	peers   *Peers
-	t       *time.Ticker
+	storage *raft.MemoryStorage
+
 	clients map[string]raftpb.RaftClient
 
-	storage  *raft.MemoryStorage
+	peers    *Peers
+	t        *time.Ticker
 	commitC  chan<- *raftpb.Entry
 	proposeC <-chan *raftpb.Entry
 	done     chan struct{}
+	wg       *sync.WaitGroup
 }
 
 func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
@@ -63,7 +65,9 @@ func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
 		commitC:  commitC,
 		proposeC: proposeC,
 		done:     make(chan struct{}),
+		wg:       &sync.WaitGroup{},
 	}
+	node.wg.Add(2)
 	go node.runRaft()
 	go node.serveProposals()
 
@@ -71,6 +75,7 @@ func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
 }
 
 func (s *node) runRaft() {
+	defer s.wg.Done()
 	for {
 		select {
 		case <-s.t.C:
@@ -86,14 +91,13 @@ func (s *node) runRaft() {
 			}
 			s.raft.Advance()
 		case <-s.done:
-			close(s.commitC)
-			s.raft.Stop()
 			return
 		}
 	}
 }
 
 func (s *node) serveProposals() {
+	defer s.wg.Done()
 	for {
 		select {
 		case prop, ok := <-s.proposeC:
@@ -140,16 +144,28 @@ func (s *node) send(messages []etcdraftpb.Message) {
 	var wg sync.WaitGroup
 	for _, m := range messages {
 		m := m
-		peerAddr := s.peers.getPeer(int(m.To) - 1) // the -1 is accounting for raft ids starting from 1
+		peerAddr := s.peers.GetPeerRaft(m.To)
 		peer, ok := s.clients[peerAddr]
 		if !ok {
 			log.Error("couldn't find peer to send message", zap.Any("message", m))
 			continue
 		}
+
 		wg.Add(1)
 		go func() {
-			_, _ = peer.Step(context.Background(), &m)
+			_, err := peer.Step(context.Background(), &m)
 			wg.Done()
+			if err != nil {
+				s.raft.ReportUnreachable(m.To)
+			}
+
+			if m.Type == etcdraftpb.MsgSnap {
+				status := raft.SnapshotFinish
+				if err != nil {
+					status = raft.SnapshotFailure
+				}
+				s.raft.ReportSnapshot(m.To, status)
+			}
 		}()
 	}
 	wg.Wait()
@@ -165,6 +181,7 @@ func (s *node) process(e etcdraftpb.Entry) {
 	case etcdraftpb.EntryConfChange:
 		var cc etcdraftpb.ConfChange
 		_ = cc.Unmarshal(e.Data)
+		cc.NodeID = 0 // we cancel the conf change since Spork currently doesn't support configuration changes
 		s.raft.ApplyConfChange(cc)
 
 	case etcdraftpb.EntryNormal:
@@ -179,4 +196,7 @@ func (s *node) process(e etcdraftpb.Entry) {
 
 func (s *node) close() {
 	close(s.done)
+	s.wg.Wait()
+	close(s.commitC)
+	s.raft.Stop()
 }

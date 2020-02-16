@@ -35,6 +35,7 @@ type Spork struct {
 	fetcher remote.Readerer
 
 	commitC <-chan *raftpb.Entry
+	wg      *sync.WaitGroup
 }
 
 func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, deleted chan<- *store.File) (Spork, error) {
@@ -72,15 +73,16 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 		commitC:   commits,
 		invalid:   invalid,
 		deleted:   deleted,
+		wg:        &sync.WaitGroup{},
 	}
-
-	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, c, r)
+	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, c, r, s.wg)
+	s.wg.Add(1)
 	go s.watchRaft()
 
 	return s, nil
 }
 
-func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data, cache storedata.Driver, raft *raft.Raft) {
+func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data, cache storedata.Driver, raft *raft.Raft, wg *sync.WaitGroup) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatal("failed to listen", zap.Error(err))
@@ -91,16 +93,20 @@ func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr 
 	proto.RegisterFileServer(grpcServer, api.NewFileServer(data, cache))
 	raftpb.RegisterRaftServer(grpcServer, raft)
 
+	wg.Add(1)
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Error("serve grpc", zap.Error(err))
 		}
 		cancel()
+		wg.Done()
 	}()
 
+	wg.Add(1)
 	go func() {
 		<-ctx.Done()
 		grpcServer.GracefulStop()
+		wg.Done()
 	}()
 }
 
@@ -380,8 +386,12 @@ func (s Spork) deleteLocally(file *store.File) {
 }
 
 func (s Spork) Close() {
-	close(s.invalid)
+	log.Info("stopping spork...")
 	s.raft.Shutdown()
+	s.wg.Wait()
+	close(s.invalid)
+	close(s.deleted)
 	s.data.Sync()
 	s.inventory.Sync()
+	log.Info("stopped spork")
 }

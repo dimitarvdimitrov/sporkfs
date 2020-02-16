@@ -15,6 +15,7 @@ const (
 )
 
 func (d Driver) Sync() {
+	log.Info("persisting inventory index")
 	d.persistInventory()
 }
 
