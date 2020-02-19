@@ -19,13 +19,14 @@ type node struct {
 	storage *raft.MemoryStorage
 
 	clients map[string]raftpb.RaftClient
+	peers   *Peers
 
-	peers    *Peers
 	t        *time.Ticker
 	commitC  chan<- *raftpb.Entry
 	proposeC <-chan *raftpb.Entry
-	done     chan struct{}
-	wg       *sync.WaitGroup
+
+	done chan struct{}
+	wg   *sync.WaitGroup
 }
 
 func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
