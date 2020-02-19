@@ -28,10 +28,7 @@ func (s Spork) watchRaft() {
 			file.Id = req.Id
 			file.Lock()
 
-			s.inventory.Add(file)
-			file.Parent = parent
-			parent.Children = append(parent.Children, file)
-			parent.Size = int64(len(parent.Children))
+			s.add(file, parent)
 			s.invalid <- parent
 
 			parent.Unlock()
@@ -57,7 +54,7 @@ func (s Spork) watchRaft() {
 				newParent.Lock()
 			}
 
-			s.renameLocally(file, newParent, oldParent, req.NewName)
+			s.rename(file, newParent, oldParent, req.NewName)
 			s.invalid <- file
 
 			file.Unlock()
@@ -76,7 +73,7 @@ func (s Spork) watchRaft() {
 			}
 			file.Lock()
 			file.Parent.Lock()
-			s.deleteLocally(file)
+			s.delete(file)
 			s.deleted <- file
 			file.Unlock()
 			file.Parent.Unlock()

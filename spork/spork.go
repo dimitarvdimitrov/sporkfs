@@ -214,7 +214,7 @@ func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) erro
 }
 
 func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peer string, dst storedata.Driver) error {
-	log.Debug("transferring remote file", log.Id(id), log.Hash(newVersion))
+	log.Debug("transferring remote file", log.Id(id), log.Hash(newVersion), zap.Uint64("old_hash", oldVersion))
 	if dst.Contains(id, newVersion) {
 		return nil
 	}
@@ -260,13 +260,16 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 		return nil, fmt.Errorf("failed to add file in raft")
 	}
 
-	s.inventory.Add(f)
-
-	f.Parent = parent
-	parent.Children = append(parent.Children, f)
-	parent.Size = int64(len(parent.Children))
+	s.add(f, parent)
 
 	return f, nil
+}
+
+func (s Spork) add(file *store.File, parent *store.File) {
+	s.inventory.Add(file)
+	file.Parent = parent
+	parent.Children = append(parent.Children, file)
+	parent.Size = int64(len(parent.Children))
 }
 
 func (s Spork) newFile(name string, mode store.FileMode) *store.File {
@@ -299,11 +302,12 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 		return fmt.Errorf("couldn't vote raft change")
 	}
 
-	s.renameLocally(file, newParent, oldParent, newName)
+	s.rename(file, newParent, oldParent, newName)
+
 	return nil
 }
 
-func (s Spork) renameLocally(file *store.File, newParent *store.File, oldParent *store.File, newName string) {
+func (s Spork) rename(file *store.File, newParent *store.File, oldParent *store.File, newName string) {
 	file.Name = newName
 
 	if oldParent.Id != newParent.Id {
@@ -348,12 +352,12 @@ func (s Spork) Delete(file *store.File) error {
 		return fmt.Errorf("couldn't vote removal in raft")
 	}
 
-	s.deleteLocally(file)
+	s.delete(file)
 
 	return nil
 }
 
-func (s Spork) deleteLocally(file *store.File) {
+func (s Spork) delete(file *store.File) {
 	s.data.Remove(file.Id, file.Hash)
 	s.cache.Remove(file.Id, file.Hash)
 	s.inventory.Remove(file.Id)
