@@ -65,15 +65,11 @@ func (d Driver) Get(id uint64) (*store.File, error) {
 	return file, nil
 }
 
-func (d Driver) Add(f *store.File) error {
+func (d Driver) Add(f *store.File) {
 	d.m.Lock()
 	defer d.m.Unlock()
 
-	if _, ok := d.catalog[f.Id]; ok {
-		return store.ErrFileAlreadyExists
-	}
 	d.catalog[f.Id] = f
-	return nil
 }
 
 func (d Driver) Remove(id uint64) {

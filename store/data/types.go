@@ -2,8 +2,6 @@ package data
 
 import (
 	"io"
-
-	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
 type Driver interface {
@@ -11,7 +9,6 @@ type Driver interface {
 	Writerer
 	ReadWriterer
 
-	Add(id uint64, mode store.FileMode) (version uint64, err error)
 	Contains(id, version uint64) bool
 	ContainsAny(id uint64) bool
 	Remove(id, version uint64)

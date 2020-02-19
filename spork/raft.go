@@ -19,7 +19,7 @@ func (s Spork) watchRaft() {
 			log.Debug("processing add raft entry", log.Id(req.Id), log.Name(req.Name))
 			parent, err := s.inventory.Get(req.ParentId)
 			if err != nil {
-				log.Error("actioning raft committed entry", zap.Error(err))
+				log.Error("add raft entry unsuccessful", zap.Error(err))
 				break
 			}
 			parent.Lock()
@@ -28,23 +28,12 @@ func (s Spork) watchRaft() {
 			file.Id = req.Id
 			file.Lock()
 
-			if err = s.inventory.Add(file); err != nil {
-				file.Unlock()
-				parent.Unlock()
-				log.Error("adding new raft file to inventory", zap.Error(err))
-				break
-			}
-
+			s.inventory.Add(file)
+			file.Parent = parent
 			parent.Children = append(parent.Children, file)
 			parent.Size = int64(len(parent.Children))
-			file.Parent = parent
-
-			if s.peers.IsLocalFile(file.Id) {
-				if err = s.createInCacheOrData(file, parent); err != nil {
-					log.Error("can't add committed raft file locally", zap.Error(err))
-				}
-			}
 			s.invalid <- parent
+
 			parent.Unlock()
 			file.Unlock()
 		case *raftpb.Entry_Rename:

@@ -4,7 +4,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 )
 
@@ -46,11 +45,6 @@ func (c *cache) Writer(id, version uint64, flags int) (data.Writer, error) {
 func (c *cache) Open(id, version uint64, flags int) (data.Reader, data.Writer, error) {
 	c.KeepAlive(id, version)
 	return c.data.Open(id, version, flags)
-}
-
-func (c *cache) Add(id uint64, mode store.FileMode) (version uint64, err error) {
-	c.KeepAlive(id, version)
-	return c.data.Add(id, mode)
 }
 
 func (c *cache) Contains(id, version uint64) bool {

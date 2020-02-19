@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	sfuse "github.com/dimitarvdimitrov/sporkfs/fuse"
@@ -67,8 +68,13 @@ func unmountWhenDone(ctx context.Context, mountpoint string, wg *sync.WaitGroup)
 	wg.Add(1)
 	go func() {
 		<-ctx.Done()
-		if err := fuse.Unmount(mountpoint); err != nil {
-			log.Error("unmount", zap.Error(err))
+		for done := false; !done; {
+			if err := fuse.Unmount(mountpoint); err != nil {
+				log.Error("unmount", zap.Error(err))
+			} else {
+				done = true
+			}
+			time.Sleep(time.Second)
 		}
 		wg.Done()
 	}()

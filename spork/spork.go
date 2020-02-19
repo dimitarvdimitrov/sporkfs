@@ -246,6 +246,12 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 	parent.Lock()
 	defer parent.Unlock()
 
+	for _, c := range parent.Children {
+		if c.Name == name {
+			return nil, store.ErrFileAlreadyExists
+		}
+	}
+
 	f := s.newFile(name, mode)
 	f.Lock()
 	defer f.Unlock()
@@ -254,37 +260,13 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 		return nil, fmt.Errorf("failed to add file in raft")
 	}
 
-	err := s.inventory.Add(f)
-	if err != nil {
-		log.Error("creating file locally", zap.Error(err))
-		return nil, err
-	}
+	s.inventory.Add(f)
 
-	err = s.createInCacheOrData(f, parent)
-	if err != nil {
-		log.Error("creating file locally", zap.Error(err))
-		return nil, err
-	}
-
+	f.Parent = parent
 	parent.Children = append(parent.Children, f)
 	parent.Size = int64(len(parent.Children))
 
 	return f, nil
-}
-
-func (s Spork) createInCacheOrData(f, parent *store.File) error {
-	driver := s.data
-	if !s.peers.IsLocalFile(f.Id) {
-		driver = s.cache
-	}
-
-	hash, err := driver.Add(f.Id, f.Mode)
-	if err != nil {
-		return err
-	}
-	f.Hash = hash
-
-	return nil
 }
 
 func (s Spork) newFile(name string, mode store.FileMode) *store.File {

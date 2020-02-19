@@ -35,39 +35,6 @@ func NewLocalDriver(location string) (*localDriver, error) {
 	}, nil
 }
 
-func (d *localDriver) Add(id uint64, mode store.FileMode) (uint64, error) {
-	d.indexM.RLock()
-	if _, ok := d.index[id]; ok {
-		d.indexM.RUnlock()
-		return 0, store.ErrFileAlreadyExists
-	}
-	d.indexM.RUnlock()
-
-	if mode.IsDir() {
-		return 0, nil // noop if it's a dir
-	}
-
-	filePath := generateStorageLocation(id, 0)
-
-	f, err := os.OpenFile(d.storageRoot+filePath, os.O_CREATE, mode)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-
-	hash := hashHandle(f)
-
-	d.indexM.Lock()
-	if _, ok := d.index[id]; ok {
-		d.indexM.Unlock()
-		return 0, store.ErrFileAlreadyExists
-	}
-	d.index[id] = map[uint64]string{hash: filePath}
-	d.indexM.Unlock()
-
-	return hash, nil
-}
-
 func hashPath(path string) uint64 {
 	file, err := os.Open(path)
 	if err != nil {
@@ -146,7 +113,7 @@ func (d *localDriver) Reader(id, hash uint64, flags int) (Reader, error) {
 		return nil, store.ErrNoSuchFile
 	}
 
-	f, err := os.OpenFile(d.storageRoot+location, flags, store.ModeRegularFile)
+	f, err := os.OpenFile(d.storageRoot+location, flags|os.O_CREATE, store.ModeRegularFile)
 	if err != nil {
 		return nil, fmt.Errorf("file id=%d was in index but not on disk: %w", id, err)
 	}
@@ -290,11 +257,7 @@ func syncer(f *os.File) func() {
 }
 
 func duplicateFile(oldAbsolute, newAbsolute string) error {
-	if _, err := os.Stat(newAbsolute); err == nil {
-		return nil
-	}
-
-	source, err := os.Open(oldAbsolute)
+	source, err := os.Create(oldAbsolute)
 	if err != nil {
 		return err
 	}
