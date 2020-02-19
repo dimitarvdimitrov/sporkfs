@@ -34,7 +34,7 @@ type Spork struct {
 	raft    *raft.Raft
 	fetcher remote.Readerer
 
-	commitC <-chan *raftpb.Entry
+	commitC <-chan raft.UnactionedMessage
 	wg      *sync.WaitGroup
 }
 
@@ -256,9 +256,11 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 	f.Lock()
 	defer f.Unlock()
 
-	if !s.raft.Add(f.Id, parent.Id, f.Name, f.Mode) {
+	committed, callback := s.raft.Add(f.Id, parent.Id, f.Name, f.Mode)
+	if !committed {
 		return nil, fmt.Errorf("failed to add file in raft")
 	}
+	defer callback()
 
 	s.add(f, parent)
 
@@ -298,9 +300,11 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 		defer newParent.Unlock()
 	}
 
-	if !s.raft.Rename(file.Id, oldParent.Id, newParent.Id, newName) {
+	committed, callback := s.raft.Rename(file.Id, oldParent.Id, newParent.Id, newName)
+	if !committed {
 		return fmt.Errorf("couldn't vote raft change")
 	}
+	defer callback()
 
 	s.rename(file, newParent, oldParent, newName)
 
@@ -319,6 +323,7 @@ func (s Spork) rename(file *store.File, newParent *store.File, oldParent *store.
 			}
 		}
 
+		file.Parent = newParent
 		newParent.Children = append(newParent.Children, file)
 		newParent.Size++
 	}
@@ -348,9 +353,11 @@ func (s Spork) Delete(file *store.File) error {
 		return store.ErrNoSuchFile
 	}
 
-	if !s.raft.Delete(file.Id, parent.Id) {
+	committed, callback := s.raft.Delete(file.Id, parent.Id)
+	if !committed {
 		return fmt.Errorf("couldn't vote removal in raft")
 	}
+	defer callback()
 
 	s.delete(file)
 

@@ -68,7 +68,7 @@ func (d *localDriver) Contains(id, hash uint64) bool {
 	defer d.indexM.RUnlock()
 
 	_, exists := d.index[id][hash]
-	return exists
+	return exists || hash == 0
 }
 
 func (d *localDriver) ContainsAny(id uint64) bool {

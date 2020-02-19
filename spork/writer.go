@@ -80,7 +80,8 @@ func (w *writer) Close() error {
 	newHash := w.w.Close()
 	size := w.fileSizer.Size(w.f.Id, newHash)
 
-	if !w.changer.Change(w.f.Id, newHash, 0, size) {
+	committed, callback := w.changer.Change(w.f.Id, newHash, 0, size)
+	if !committed {
 		w.fileRemover.Remove(w.f.Id, newHash)
 		log.Error("voting change in raft failed",
 			log.Id(w.f.Id),
@@ -89,6 +90,7 @@ func (w *writer) Close() error {
 		)
 		return fmt.Errorf("couldn't vote file change in raft; changes discarded")
 	}
+	defer callback()
 
 	if w.f.Hash != newHash {
 		log.Debug("removing old version of file",

@@ -114,6 +114,7 @@ func (s Spork) watchRaft() {
 			s.invalid <- file
 			file.Unlock()
 		}
+		entry.Action()
 		log.Debug("finished processing raft entry")
 	}
 }

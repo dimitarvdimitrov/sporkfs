@@ -1,6 +1,16 @@
 package raft
 
-import "sync"
+import (
+	"sync"
+
+	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
+)
+
+type UnactionedMessage struct {
+	*raftpb.Entry
+
+	Action func()
+}
 
 // inFlight is used to track raft committed entry ids after they have been sent to channels. It provides
 // methods to register/watch entries and then wait until all registered entries are confirmed.

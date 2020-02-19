@@ -21,15 +21,16 @@ type node struct {
 	clients map[string]raftpb.RaftClient
 	peers   *Peers
 
-	t        *time.Ticker
-	commitC  chan<- *raftpb.Entry
-	proposeC <-chan *raftpb.Entry
+	t                 *time.Ticker
+	commitC           chan<- UnactionedMessage
+	proposeC          <-chan *raftpb.Entry
+	unactionedEntries *inFlight
 
 	done chan struct{}
 	wg   *sync.WaitGroup
 }
 
-func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
+func newNode(peers *Peers) (*node, <-chan UnactionedMessage, chan<- *raftpb.Entry) {
 	storage := raft.NewMemoryStorage()
 	config := &raft.Config{
 		ID:              uint64(peers.thisPeer) + 1,
@@ -54,19 +55,20 @@ func newNode(peers *Peers) (*node, <-chan *raftpb.Entry, chan<- *raftpb.Entry) {
 	}
 
 	raftNode := raft.StartNode(config, raftPeers)
-	commitC := make(chan *raftpb.Entry)
+	commitC := make(chan UnactionedMessage)
 	proposeC := make(chan *raftpb.Entry)
 
 	node := &node{
-		raft:     raftNode,
-		storage:  storage,
-		clients:  clients,
-		peers:    peers,
-		t:        time.NewTicker(time.Millisecond * 100),
-		commitC:  commitC,
-		proposeC: proposeC,
-		done:     make(chan struct{}),
-		wg:       &sync.WaitGroup{},
+		raft:              raftNode,
+		storage:           storage,
+		clients:           clients,
+		peers:             peers,
+		t:                 time.NewTicker(time.Millisecond * 100),
+		commitC:           commitC,
+		proposeC:          proposeC,
+		unactionedEntries: newInFlight(),
+		done:              make(chan struct{}),
+		wg:                &sync.WaitGroup{},
 	}
 	node.wg.Add(2)
 	go node.runRaft()
@@ -191,7 +193,12 @@ func (s *node) process(e etcdraftpb.Entry) {
 			log.Error("couldn't decode entry", zap.ByteString("entry", e.Data))
 			break
 		}
-		s.commitC <- msg
+
+		callback := s.unactionedEntries.watch(msg.Id)
+		s.commitC <- UnactionedMessage{
+			Entry:  msg,
+			Action: callback,
+		}
 	}
 }
 

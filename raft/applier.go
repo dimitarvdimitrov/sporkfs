@@ -10,24 +10,25 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
-// applier terminates when the commits channel has been closed
+// applier terminates when the commits channel has been closed. Applier accepts proposals and keeps track of them.
+// See implementation of
 type applier struct {
 	proposeC chan<- *raftpb.Entry
-	commitC  <-chan *raftpb.Entry
-	syncC    chan<- *raftpb.Entry
+	commitC  <-chan UnactionedMessage
+	syncC    chan<- UnactionedMessage
 
 	l        sync.Mutex
 	wg       *sync.WaitGroup
-	inFlight map[uint64]chan struct{}
+	inFlight map[uint64]chan func() // entries for which we haven't received a committed raft entry yet
 	done     chan struct{}
 }
 
-func newApplier(commits <-chan *raftpb.Entry, proposals chan<- *raftpb.Entry) (*applier, <-chan *raftpb.Entry) {
-	syncC := make(chan *raftpb.Entry)
+func newApplier(commits <-chan UnactionedMessage, proposals chan<- *raftpb.Entry) (*applier, <-chan UnactionedMessage) {
+	syncC := make(chan UnactionedMessage)
 	w := &applier{
 		proposeC: proposals,
 		commitC:  commits,
-		inFlight: make(map[uint64]chan struct{}),
+		inFlight: make(map[uint64]chan func()),
 		done:     make(chan struct{}),
 		syncC:    syncC,
 		wg:       &sync.WaitGroup{},
@@ -52,7 +53,7 @@ func (w *applier) watchCommits() {
 		if ok {
 			log.Debug("queuing confirmation of previously proposed raft entry")
 			select {
-			case resultC <- struct{}{}:
+			case resultC <- entry.Action:
 				close(resultC)
 				w.l.Unlock()
 				continue
@@ -65,7 +66,7 @@ func (w *applier) watchCommits() {
 	}
 }
 
-func (w *applier) ProposeChange(id, hash, offset, peer uint64, size int64) bool {
+func (w *applier) ProposeChange(id, hash, offset, peer uint64, size int64) (bool, func()) {
 	c := &raftpb.Change{
 		Id:     id,
 		Hash:   hash,
@@ -80,7 +81,7 @@ func (w *applier) ProposeChange(id, hash, offset, peer uint64, size int64) bool 
 	return w.propose(entry)
 }
 
-func (w *applier) ProposeAdd(id, parentId uint64, name string, mode store.FileMode) bool {
+func (w *applier) ProposeAdd(id, parentId uint64, name string, mode store.FileMode) (bool, func()) {
 	a := &raftpb.Add{
 		Id:       id,
 		ParentId: parentId,
@@ -94,7 +95,7 @@ func (w *applier) ProposeAdd(id, parentId uint64, name string, mode store.FileMo
 	return w.propose(entry)
 }
 
-func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, newName string) bool {
+func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, newName string) (bool, func()) {
 	r := &raftpb.Rename{
 		Id:          id,
 		OldParentId: oldParentId,
@@ -107,7 +108,7 @@ func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, newName str
 	return w.propose(entry)
 }
 
-func (w *applier) ProposeDelete(id, parentId uint64) bool {
+func (w *applier) ProposeDelete(id, parentId uint64) (bool, func()) {
 	d := &raftpb.Delete{
 		Id:       id,
 		ParentId: parentId,
@@ -118,17 +119,17 @@ func (w *applier) ProposeDelete(id, parentId uint64) bool {
 	return w.propose(entry)
 }
 
-func (w *applier) propose(entry *raftpb.Entry) bool {
+func (w *applier) propose(entry *raftpb.Entry) (bool, func()) {
 	select {
 	case <-w.done:
-		return false
+		return false, noop
 	default:
 	}
 
 	w.wg.Add(1)
 	defer w.wg.Done()
 
-	resultC := make(chan struct{})
+	resultC := make(chan func())
 	w.l.Lock()
 	entry.Id = w.generateId()
 	w.inFlight[entry.Id] = resultC
@@ -144,19 +145,22 @@ func (w *applier) propose(entry *raftpb.Entry) bool {
 
 	select {
 	case <-w.done:
-		return false
+		return false, noop
 	case <-timeout:
-		return false
+		return false, noop
 	case w.proposeC <- entry:
 	}
 
 	select {
 	case <-w.done:
-		return false
+		return false, noop
 	case <-timeout:
-		return false
-	case _, ok := <-resultC:
-		return ok
+		return false, noop
+	case callback, ok := <-resultC:
+		if !ok {
+			return ok, noop
+		}
+		return ok, callback
 	}
 }
 
@@ -179,3 +183,5 @@ func (w *applier) close() {
 	close(w.syncC)
 	close(w.proposeC) // not necessary but might as well
 }
+
+func noop() {}

@@ -10,11 +10,16 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
+// Committer tries to commit the entry to raft. It returns true or false if the entry get completed in a timely
+// manner. After proposing a change, which has been approved by raft, you need to invoke the callback
+// function returned by the Committer's method. Even if you fail to action the result, you need to invoke the callback;
+// otherwise bad things will happen. If the change wasn't approved you don't need to call the callback,
+// and calling it will be a noop.
 type Committer interface {
-	Add(id, parentId uint64, name string, mode store.FileMode) bool
-	Change(id, hash, offset uint64, size int64) bool
-	Rename(id, oldParentId, newParentId uint64, newName string) bool
-	Delete(id, parentId uint64) bool
+	Add(id, parentId uint64, name string, mode store.FileMode) (bool, func())
+	Change(id, hash, offset uint64, size int64) (bool, func())
+	Rename(id, oldParentId, newParentId uint64, newName string) (bool, func())
+	Delete(id, parentId uint64) (bool, func())
 }
 
 type Raft struct {
@@ -22,7 +27,7 @@ type Raft struct {
 	a *applier
 }
 
-func New(peers *Peers) (*Raft, <-chan *raftpb.Entry) {
+func New(peers *Peers) (*Raft, <-chan UnactionedMessage) {
 	n, commits, proposals := newNode(peers)
 	a, syncC := newApplier(commits, proposals)
 
@@ -32,19 +37,19 @@ func New(peers *Peers) (*Raft, <-chan *raftpb.Entry) {
 	}, syncC
 }
 
-func (r *Raft) Add(id, parentId uint64, name string, mode store.FileMode) bool {
+func (r *Raft) Add(id, parentId uint64, name string, mode store.FileMode) (bool, func()) {
 	return r.a.ProposeAdd(id, parentId, name, mode)
 }
 
-func (r *Raft) Change(id, hash, offset uint64, size int64) bool {
+func (r *Raft) Change(id, hash, offset uint64, size int64) (bool, func()) {
 	return r.a.ProposeChange(id, hash, offset, r.n.peers.thisPeerRaftId(), size)
 }
 
-func (r *Raft) Rename(id, oldParentId, newParentId uint64, newName string) bool {
+func (r *Raft) Rename(id, oldParentId, newParentId uint64, newName string) (bool, func()) {
 	return r.a.ProposeRename(id, oldParentId, newParentId, newName)
 }
 
-func (r *Raft) Delete(id, parentId uint64) bool {
+func (r *Raft) Delete(id, parentId uint64) (bool, func()) {
 	return r.a.ProposeDelete(id, parentId)
 }
 
