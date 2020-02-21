@@ -115,6 +115,9 @@ func (s Spork) Root() *store.File {
 }
 
 func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
+	f.RLock()
+	defer f.RUnlock()
+
 	for _, c := range f.Children {
 		if c.Name == name {
 			return c, nil
@@ -162,8 +165,8 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 }
 
 func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
-	f.Lock()
-	defer f.Unlock()
+	f.RLock()
+	defer f.RUnlock()
 
 	driver := s.data
 	if !s.peers.IsLocalFile(f.Id) {

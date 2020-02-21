@@ -66,6 +66,10 @@ func Error(msg string, args ...zap.Field) {
 	l.Error(msg, args...)
 }
 
+func Panic(msg string, args ...zap.Field) {
+	l.Panic(msg, args...)
+}
+
 func Fatal(msg string, args ...zap.Field) {
 	l.Fatal(msg, args...)
 }

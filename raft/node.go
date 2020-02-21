@@ -92,6 +92,7 @@ func (s *node) runRaft() {
 			for _, entry := range rd.CommittedEntries {
 				s.process(entry)
 			}
+			s.maybeCreateSnapshot()
 			s.raft.Advance()
 		case <-s.done:
 			return
@@ -200,6 +201,13 @@ func (s *node) process(e etcdraftpb.Entry) {
 			Action: callback,
 		}
 	}
+}
+
+func (s *node) maybeCreateSnapshot() {
+	//s.unactionedEntries.pause()
+	//defer s.unactionedEntries.resume()
+
+	//s.unactionedEntries.wait()
 }
 
 func (s *node) close() {
