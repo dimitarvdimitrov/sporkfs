@@ -2,7 +2,6 @@ package inventory
 
 import (
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 
@@ -12,16 +11,13 @@ import (
 type Driver struct {
 	m sync.RWMutex
 
-	location string
-	root     *store.File
-	catalog  map[uint64]*store.File
+	root    *store.File
+	catalog map[uint64]*store.File
 }
 
-func NewDriver(location string) (Driver, error) {
+func NewDriver() (Driver, error) {
 	rand.Seed(time.Now().UnixNano())
-	if err := os.MkdirAll(location, os.ModeDir|0755); err != nil {
-		return Driver{}, err
-	}
+
 	now := time.Now()
 	root := &store.File{
 		RWMutex:  &sync.RWMutex{},
@@ -37,9 +33,8 @@ func NewDriver(location string) (Driver, error) {
 	catalogFiles(root, c)
 
 	return Driver{
-		location: location,
-		root:     root,
-		catalog:  c,
+		root:    root,
+		catalog: c,
 	}, nil
 }
 

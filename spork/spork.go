@@ -49,7 +49,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 	}
 	c := cache.New(cacheData)
 
-	inv, err := inventory.NewDriver(cfg.DataDir + "/inventory")
+	inv, err := inventory.NewDriver()
 	if err != nil {
 		return Spork{}, fmt.Errorf("init inventory: %s", err)
 	}
@@ -393,6 +393,5 @@ func (s Spork) Close() {
 	s.wg.Wait()
 	close(s.invalid)
 	close(s.deleted)
-	s.data.Sync()
 	log.Info("stopped spork")
 }

@@ -4,15 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 
-	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
-	"go.uber.org/zap"
-)
-
-const (
-	indexLocation = "/index"
 )
 
 func (d Driver) Name() string {
@@ -43,18 +36,4 @@ func (d Driver) SetState(r io.Reader) error {
 	d.catalog = make(map[uint64]*store.File)
 	catalogFiles(d.root, d.catalog)
 	return nil
-}
-
-// persistInventory saves the file structure on disk starting with the root node
-func (d Driver) persistInventory() {
-	f, err := os.Create(d.location + indexLocation)
-	if err != nil {
-		log.Error("couldn't persist index at", zap.String("location", d.location), zap.Error(err))
-	}
-	defer f.Close()
-
-	err = d.root.Serialize(f)
-	if err != nil {
-		log.Error("persisting storage index at", zap.String("location", d.location), zap.Error(err))
-	}
 }
