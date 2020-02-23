@@ -131,14 +131,9 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 	defer f.Unlock()
 	log.Debug("opening file for read/write", log.Id(f.Id), log.Hash(f.Hash))
 
-	driver := s.data
-	if !s.peers.IsLocalFile(f.Id) {
-		log.Debug("reading remote file for read/write")
-		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
-		if err != nil {
-			return nil, err
-		}
-		driver = s.cache
+	driver, err := s.ensureFile(f)
+	if err != nil {
+		return nil, err
 	}
 
 	r, w, err := driver.Open(f.Id, f.Hash, flags)
@@ -168,14 +163,9 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 	f.RLock()
 	defer f.RUnlock()
 
-	driver := s.data
-	if !s.peers.IsLocalFile(f.Id) {
-		log.Debug("reading remote file for read")
-		err := s.transferRemoteFile(f.Id, f.Hash, s.cache)
-		if err != nil {
-			return nil, err
-		}
-		driver = s.cache
+	driver, err := s.ensureFile(f)
+	if err != nil {
+		return nil, err
 	}
 
 	r, err := driver.Reader(f.Id, f.Hash, flags)
@@ -190,12 +180,27 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 	return reader, nil
 }
 
-func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) error {
-	log.Debug("transferring remote file", log.Id(id), log.Hash(version))
+// ensureFile makes sure the file is present locally and returns the driver from which the file can be read
+func (s Spork) ensureFile(f *store.File) (storedata.Driver, error) {
+	driver := s.data
+	if !s.peers.IsLocalFile(f.Id) {
+		driver = s.cache
+	}
+
+	err := s.maybeTransferRemoteFile(f.Id, f.Hash, driver)
+	if err != nil {
+		return nil, err
+	}
+
+	return driver, nil
+}
+
+func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver) error {
 	if dst.Contains(id, version) {
 		log.Debug("file already present in destination", log.Id(id), log.Hash(version))
 		return nil
 	}
+	log.Debug("transferring remote file", log.Id(id), log.Hash(version))
 
 	w, err := dst.Writer(id, 0, os.O_TRUNC)
 	if err != nil {
@@ -216,7 +221,7 @@ func (s Spork) transferRemoteFile(id, version uint64, dst storedata.Driver) erro
 	return nil
 }
 
-func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peer string, dst storedata.Driver) error {
+func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint string, dst storedata.Driver) error {
 	log.Debug("transferring remote file", log.Id(id), log.Hash(newVersion), zap.Uint64("old_hash", oldVersion))
 	if dst.Contains(id, newVersion) {
 		return nil
@@ -228,9 +233,12 @@ func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peer string, d
 	}
 	defer w.Close()
 
-	r, err := s.fetcher.ReaderFromPeer(id, newVersion, peer)
+	r, err := s.fetcher.ReaderFromPeer(id, newVersion, peerHint)
 	if err != nil {
-		return err
+		r, err = s.fetcher.Reader(id, newVersion)
+		if err != nil {
+			return err
+		}
 	}
 	defer r.Close()
 
@@ -270,6 +278,7 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 	return f, nil
 }
 
+// TODO remove children with the same name as file from parent
 func (s Spork) add(file *store.File, parent *store.File) {
 	s.inventory.Add(file)
 	file.Parent = parent
@@ -388,6 +397,5 @@ func (s Spork) Close() {
 	close(s.invalid)
 	close(s.deleted)
 	s.data.Sync()
-	s.inventory.Sync()
 	log.Info("stopped spork")
 }

@@ -22,7 +22,7 @@ type File struct {
 	Name  string
 	Mode  FileMode
 	Size  int64
-	Hash  uint64
+	Hash  uint64 // TODO change this to version and make it random for each file creation
 	Atime time.Time
 	Mtime time.Time
 
