@@ -1,9 +1,10 @@
 package inventory
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"os"
-	"sync"
-	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
@@ -14,9 +15,34 @@ const (
 	indexLocation = "/index"
 )
 
-func (d Driver) Sync() {
-	log.Info("persisting inventory index")
-	d.persistInventory()
+func (d Driver) Name() string {
+	return "inventory"
+}
+
+func (d Driver) GetState() (io.Reader, error) {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	buff := &bytes.Buffer{}
+	err := d.root.Serialize(buff)
+	if err != nil {
+		return nil, fmt.Errorf("serializing inventory root: %w", err)
+	}
+	return buff, nil
+}
+
+func (d Driver) SetState(r io.Reader) error {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	d.root = &store.File{}
+	err := d.root.Deserialize(r)
+	if err != nil {
+		return fmt.Errorf("setting inventory state: %w", err)
+	}
+	d.catalog = make(map[uint64]*store.File)
+	catalogFiles(d.root, d.catalog)
+	return nil
 }
 
 // persistInventory saves the file structure on disk starting with the root node
@@ -31,30 +57,4 @@ func (d Driver) persistInventory() {
 	if err != nil {
 		log.Error("persisting storage index at", zap.String("location", d.location), zap.Error(err))
 	}
-}
-
-func restoreInventory(location string) *store.File {
-	f, err := os.OpenFile(location, os.O_RDONLY, store.ModeRegularFile)
-	if err != nil {
-		log.Error("couldn't open inventory index", zap.Error(err))
-		now := time.Now()
-		return &store.File{
-			RWMutex:  &sync.RWMutex{},
-			Id:       0,
-			Mode:     store.ModeDirectory | 0777,
-			Size:     1,
-			Hash:     0,
-			Children: nil,
-			Atime:    now,
-			Mtime:    now,
-		}
-	}
-	defer f.Close()
-
-	root := &store.File{}
-	err = root.Deserialize(f)
-	if err != nil {
-		log.Fatal("couldn't read inventory index", zap.Error(err))
-	}
-	return root
 }

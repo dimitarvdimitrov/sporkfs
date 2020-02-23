@@ -17,7 +17,7 @@ type Driver interface {
 	Reader(id, version uint64, flags int) (Reader, error)
 	Remove(id, version uint64)
 	Size(id, version uint64) int64
-	Sync()
+	Sync() // TODO remove
 
 	// Write will return a Writer to the file and version with the flags.
 	// If the version is 0, a new empty file will be created and returned.

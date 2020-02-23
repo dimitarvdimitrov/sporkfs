@@ -197,6 +197,7 @@ func (d *localDriver) Writer(id, hash uint64, flags int) (Writer, error) {
 		flags |= os.O_TRUNC
 	}
 
+	// TODO this shouldn't be needed. same somewhere above
 	if flags&os.O_CREATE != 0 {
 		flags ^= os.O_CREATE
 	}
@@ -257,7 +258,7 @@ func syncer(f *os.File) func() {
 }
 
 func duplicateFile(oldAbsolute, newAbsolute string) error {
-	source, err := os.Create(oldAbsolute)
+	source, err := os.OpenFile(oldAbsolute, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return err
 	}

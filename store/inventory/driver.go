@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
@@ -20,10 +21,19 @@ func NewDriver(location string) (Driver, error) {
 	if err := os.MkdirAll(location, os.ModeDir|0755); err != nil {
 		return Driver{}, err
 	}
-	root := restoreInventory(location + indexLocation)
+	now := time.Now()
+	root := &store.File{
+		RWMutex:  &sync.RWMutex{},
+		Id:       0,
+		Mode:     store.ModeDirectory | 0777,
+		Size:     1,
+		Hash:     0,
+		Children: nil,
+		Atime:    now,
+		Mtime:    now,
+	}
 	c := make(map[uint64]*store.File)
 	catalogFiles(root, c)
-	initLocks(root, c)
 
 	return Driver{
 		location: location,
@@ -36,17 +46,6 @@ func catalogFiles(root *store.File, catalog map[uint64]*store.File) {
 	catalog[root.Id] = root
 	for _, c := range root.Children {
 		catalogFiles(c, catalog)
-	}
-}
-
-func initLocks(root *store.File, catalog map[uint64]*store.File) {
-	if existingRoot, ok := catalog[root.Id]; ok && existingRoot.RWMutex != nil {
-		root.RWMutex = existingRoot.RWMutex
-	} else {
-		root.RWMutex = &sync.RWMutex{}
-	}
-	for _, c := range root.Children {
-		initLocks(c, catalog)
 	}
 }
 
