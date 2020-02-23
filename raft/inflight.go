@@ -12,13 +12,16 @@ type UnactionedMessage struct {
 	Action func()
 }
 
+// TODO rename to entryTracker
 // inFlight is used to track raft committed entry ids after they have been sent to channels. It provides
 // methods to register/watch entries and then wait until all registered entries are confirmed.
 // It will be used to pause the raft main loop while taking a snapshot
 type inFlight struct {
 	*sync.Mutex
-	firstId     uint64
-	unconfirmed []bool
+	firstId uint64
+
+	// TODO rename to entries
+	unconfirmed []bool // true or false if the entry is confirmed/actioned or not
 
 	allDone chan struct{}
 	paused  chan struct{}
@@ -85,6 +88,9 @@ func (i *inFlight) pause() {
 
 	i.paused = make(chan struct{})
 	i.allDone = make(chan struct{})
+	if len(i.unconfirmed) == 0 {
+		close(i.allDone)
+	}
 }
 
 // resume unblocks any calls to watch. Watch, pause and resume shouldn't be called concurrently.
