@@ -39,8 +39,6 @@ type Spork struct {
 }
 
 func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, deleted chan<- *store.File) (Spork, error) {
-	peers := raft.NewPeerList(cfg.Raft)
-
 	data, err := storedata.NewLocalDriver(cfg.DataDir + "/data")
 	if err != nil {
 		return Spork{}, fmt.Errorf("init data driver: %s", err)
@@ -56,12 +54,11 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 		return Spork{}, fmt.Errorf("init inventory: %s", err)
 	}
 
+	r, commits, peers := raft.New(cfg.Raft, inv)
 	fetcher, err := remote.NewFetcher(peers)
 	if err != nil {
 		return Spork{}, fmt.Errorf("init fetcher: %s", err)
 	}
-
-	r, commits := raft.New(peers)
 
 	s := Spork{
 		inventory: inv,

@@ -141,7 +141,8 @@ func (w *applier) propose(entry *raftpb.Entry) (bool, func()) {
 		w.l.Unlock()
 	}()
 
-	timeout := time.NewTimer(time.Second * 10).C
+	// TODO revisit this. maybe an electionTimeout will be enough to be certain?
+	timeout := time.NewTimer(time.Second).C
 
 	select {
 	case <-w.done:

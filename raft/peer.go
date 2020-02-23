@@ -1,15 +1,13 @@
 package raft
 
 import (
+	"math"
 	"sort"
 
 	"github.com/coreos/etcd/raft"
 )
 
-var (
-	minusOne = -1
-	maxId    = uint64(minusOne)
-)
+const maxId = math.MaxUint64
 
 type Peers struct {
 	redundancy int
@@ -106,7 +104,7 @@ func (p Peers) GetPeerRaft(id uint64) string {
 	return p.getPeer(int(id - 1))
 }
 
-// returns the raft id for this peer
+// thisPeerRaftId returns the raft id for this peer
 func (p Peers) thisPeerRaftId() uint64 {
 	return uint64(p.thisPeer + 1)
 }

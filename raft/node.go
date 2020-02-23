@@ -1,7 +1,9 @@
 package raft
 
 import (
+	"bytes"
 	"context"
+	"math"
 	"sync"
 	"time"
 
@@ -9,14 +11,23 @@ import (
 	etcdraftpb "github.com/coreos/etcd/raft/raftpb"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
+	"github.com/dimitarvdimitrov/sporkfs/raft/storage"
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
+// TODO revisit these times
+const (
+	bcastTime       = time.Millisecond * 10 // usual time it takes to send a message and receive a reply
+	heartbeatTime   = bcastTime * 5
+	electionTimeout = heartbeatTime * 10
+)
+
 type node struct {
-	raft    raft.Node
-	storage *raft.MemoryStorage
+	raft        raft.Node
+	storage     storage.Storage
+	snapshotter *snapshotter
 
 	clients map[string]raftpb.RaftClient
 	peers   *Peers
@@ -24,25 +35,44 @@ type node struct {
 	t                 *time.Ticker
 	commitC           chan<- UnactionedMessage
 	proposeC          <-chan *raftpb.Entry
-	unactionedEntries *inFlight
+	unactionedEntries *inFlight // TODO rename to entryTracker
 
 	done chan struct{}
 	wg   *sync.WaitGroup
 }
 
-func newNode(peers *Peers) (*node, <-chan UnactionedMessage, chan<- *raftpb.Entry) {
-	storage := raft.NewMemoryStorage()
+func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*node, <-chan UnactionedMessage, chan<- *raftpb.Entry) {
+	s := storage.New(storeLocation)
+	//confState := &etcdraftpb.ConfState{}
+	//stateSources = append(stateSources,
+	//	marshallableState{name: "confState", c: confState},
+	//	marshallableState{name: "hardState", c: s.HardState()},
+	//)
+	//
+	//snapshotter := newSnapshotter(stateSources...)
+	//
+	//snap, err := s.Snapshot()
+	//if err != nil {
+	//	log.Panic("couldn't get a storage snapshot", zap.Error(err))
+	//}
+	//if !raft.IsEmptySnap(snap) {
+	//	r := bytes.NewReader(snap.Data)
+	//	err = snapshotter.recoverSnap(r, int64(r.Len()))
+	//	if err != nil {
+	//		log.Panic("recovering state", zap.Error(err))
+	//	}
+	//}
+
 	config := &raft.Config{
-		ID:              uint64(peers.thisPeer) + 1,
-		ElectionTick:    10,
-		HeartbeatTick:   1,
-		Storage:         storage,
-		MaxSizePerMsg:   4096,
+		ID:            uint64(peers.thisPeer) + 1,
+		ElectionTick:  int(electionTimeout/heartbeatTime) * 10,
+		HeartbeatTick: 10,
+		//Applied:         88,
+		Storage:         s,
 		MaxInflightMsgs: 256,
+		MaxSizePerMsg:   math.MaxUint64,
 		Logger:          log.Logger(),
 	}
-
-	raftPeers := peers.raftPeers()
 
 	clients := make(map[string]raftpb.RaftClient, peers.Len())
 	err := peers.ForEach(func(peerAddr string) error {
@@ -54,16 +84,25 @@ func newNode(peers *Peers) (*node, <-chan UnactionedMessage, chan<- *raftpb.Entr
 		log.Fatal("couldn't dial peer", zap.Error(err))
 	}
 
-	raftNode := raft.StartNode(config, raftPeers)
+	var raftNode raft.Node
+	//if raft.IsEmptySnap(snap) {
+	//raftNode = raft.StartNode(config, peers.raftPeers())
+	//} else {
+
+	raftNode = raft.RestartNode(config)
+	//}
+
 	commitC := make(chan UnactionedMessage)
 	proposeC := make(chan *raftpb.Entry)
 
 	node := &node{
-		raft:              raftNode,
-		storage:           storage,
+		raft:    raftNode,
+		storage: s,
+		//confState:         confState,
+		//snapshotter:       snapshotter,
 		clients:           clients,
 		peers:             peers,
-		t:                 time.NewTicker(time.Millisecond * 100),
+		t:                 time.NewTicker(heartbeatTime / 10),
 		commitC:           commitC,
 		proposeC:          proposeC,
 		unactionedEntries: newInFlight(),
@@ -87,12 +126,12 @@ func (s *node) runRaft() {
 			s.saveToStorage(rd.HardState, rd.Entries, rd.Snapshot)
 			s.send(rd.Messages)
 			if !raft.IsEmptySnap(rd.Snapshot) {
-				s.processSnapshot(rd.Snapshot)
+				s.applySnapshot(rd.Snapshot)
 			}
 			for _, entry := range rd.CommittedEntries {
 				s.process(entry)
 			}
-			s.maybeCreateSnapshot()
+			//s.maybeCreateSnapshot()
 			s.raft.Advance()
 		case <-s.done:
 			return
@@ -115,7 +154,7 @@ func (s *node) serveProposals() {
 				break
 			}
 
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
 			err = s.raft.Propose(ctx, data)
 			if err != nil {
 				log.Error("error proposing in raft", zap.Error(err))
@@ -127,21 +166,21 @@ func (s *node) serveProposals() {
 }
 
 func (s *node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.Entry, snapshot etcdraftpb.Snapshot) {
+	if err := s.storage.Append(entries); err != nil {
+		log.Error("[raft node] appending entries", zap.Error(err))
+	}
+
 	if !raft.IsEmptyHardState(state) {
 		if err := s.storage.SetHardState(state); err != nil {
-			log.Error("saving hard state", zap.Error(err))
+			log.Error("[raft node] saving hard state", zap.Error(err))
 		}
 	}
 
-	if err := s.storage.Append(entries); err != nil {
-		log.Error("appending entries", zap.Error(err))
-	}
-
-	if !raft.IsEmptySnap(snapshot) {
-		if err := s.storage.ApplySnapshot(snapshot); err != nil {
-			log.Error("saving hard state", zap.Error(err))
-		}
-	}
+	//if !raft.IsEmptySnap(snapshot) {
+	//	if err := s.storage.SaveSnapshot(snapshot); err != nil {
+	//		log.Error("saving hard state", zap.Error(err))
+	//	}
+	//}
 }
 
 func (s *node) send(messages []etcdraftpb.Message) {
@@ -155,13 +194,15 @@ func (s *node) send(messages []etcdraftpb.Message) {
 			continue
 		}
 
+		if len(m.Entries) > 0 {
+			log.Debug("[node] sending entries", zap.Uint64("first_index", m.Entries[0].Index), zap.Uint64("last_index", m.Entries[len(m.Entries)-1].Index), zap.Uint64("to", m.To))
+		}
+
 		wg.Add(1)
 		go func() {
-			_, err := peer.Step(context.Background(), &m)
+			ctx, _ := context.WithTimeout(context.Background(), bcastTime*10)
+			_, err := peer.Step(ctx, &m)
 			wg.Done()
-			if err != nil {
-				s.raft.ReportUnreachable(m.To)
-			}
 
 			if m.Type == etcdraftpb.MsgSnap {
 				status := raft.SnapshotFinish
@@ -175,8 +216,52 @@ func (s *node) send(messages []etcdraftpb.Message) {
 	wg.Wait()
 }
 
-func (s *node) processSnapshot(snapshot etcdraftpb.Snapshot) {
-	log.Debug("processing raft snapshot")
+func (s *node) applySnapshot(snapshot etcdraftpb.Snapshot) {
+	reader := bytes.NewReader(snapshot.Data)
+	err := s.snapshotter.recoverSnap(reader, int64(reader.Len()))
+	if err != nil {
+		log.Panic("recovering snapshot", zap.Error(err))
+	}
+}
+
+const snapshotThreshold = 10
+
+func (s *node) maybeCreateSnapshot() {
+	first, err := s.storage.FirstIndex()
+	last, err1 := s.storage.LastIndex()
+	_, err2 := s.storage.Term(last)
+
+	if err != nil || err1 != nil || err2 != nil || int64(last)-int64(first) < snapshotThreshold {
+		if (err != nil && err != raft.ErrUnavailable) ||
+			(err1 != nil && err1 != raft.ErrUnavailable) ||
+			(err2 != nil && err2 != raft.ErrCompacted) {
+			log.Error("getting indexes for snapshot",
+				zap.NamedError("err", err),
+				zap.NamedError("err1", err1),
+				zap.NamedError("err2", err2),
+			)
+		}
+		return
+	}
+
+	s.unactionedEntries.pause()
+	defer s.unactionedEntries.resume()
+	s.unactionedEntries.wait()
+
+	buff := &bytes.Buffer{}
+	err = s.snapshotter.createSnap(buff)
+	if err != nil {
+		log.Error("creating snapshot", zap.Error(err))
+		return
+	}
+
+	_ = etcdraftpb.Snapshot{
+		Data: buff.Bytes(),
+	}
+
+	//if err = s.storage.SaveSnapshot(snap); err != nil {
+	//	log.Error("saving snapshot", zap.Error(err))
+	//}
 }
 
 func (s *node) process(e etcdraftpb.Entry) {
@@ -200,13 +285,6 @@ func (s *node) process(e etcdraftpb.Entry) {
 			Action: callback,
 		}
 	}
-}
-
-func (s *node) maybeCreateSnapshot() {
-	//s.unactionedEntries.pause()
-	//defer s.unactionedEntries.resume()
-
-	//s.unactionedEntries.wait()
 }
 
 func (s *node) close() {

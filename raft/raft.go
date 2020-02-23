@@ -3,9 +3,8 @@ package raft
 import (
 	"context"
 
-	"github.com/dimitarvdimitrov/sporkfs/log"
-
 	etcdraftpb "github.com/coreos/etcd/raft/raftpb"
+	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
@@ -27,14 +26,15 @@ type Raft struct {
 	a *applier
 }
 
-func New(peers *Peers) (*Raft, <-chan UnactionedMessage) {
-	n, commits, proposals := newNode(peers)
+func New(cfg Config, states ...StateSource) (*Raft, <-chan UnactionedMessage, *Peers) {
+	peers := NewPeerList(cfg)
+	n, commits, proposals := newNode(peers, cfg.SnapshotDir, states...)
 	a, syncC := newApplier(commits, proposals)
 
 	return &Raft{
 		a: a,
 		n: n,
-	}, syncC
+	}, syncC, peers
 }
 
 func (r *Raft) Add(id, parentId uint64, name string, mode store.FileMode) (bool, func()) {

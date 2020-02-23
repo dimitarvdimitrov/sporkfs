@@ -18,6 +18,7 @@ type Driver struct {
 }
 
 func NewDriver(location string) (Driver, error) {
+	rand.Seed(time.Now().UnixNano())
 	if err := os.MkdirAll(location, os.ModeDir|0755); err != nil {
 		return Driver{}, err
 	}
