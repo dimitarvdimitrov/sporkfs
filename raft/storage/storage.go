@@ -268,6 +268,10 @@ func (s *storage) SaveSnapshot(index uint64, data []byte, confState etcdraftpb.C
 	s.Lock()
 	defer s.Unlock()
 
+	if index <= s.snap.Metadata.Index {
+		return raft.ErrSnapOutOfDate
+	}
+
 	term, err := s.Term(index)
 	if err != nil {
 		return err
@@ -291,8 +295,8 @@ func (s *storage) SaveSnapshot(index uint64, data []byte, confState etcdraftpb.C
 	return nil
 }
 
-// TODO change stuff on disk
 func (s *storage) compact(compactIndex uint64) error {
+	// copy entriesFile, writeEntries only with the truncated and rename and set s.entries
 	dummyIndex := s.entries[0].e.Index
 	if compactIndex <= dummyIndex {
 		return raft.ErrCompacted
@@ -305,7 +309,35 @@ func (s *storage) compact(compactIndex uint64) error {
 		)
 	}
 
-	s.entries = s.entries[(compactIndex - dummyIndex):]
+	compactionPoint := compactIndex - dummyIndex
+	notCompacted := make([]etcdraftpb.Entry, 0, len(s.entries)-int(compactionPoint))
+	for _, e := range s.entries[compactionPoint:] {
+		notCompacted = append(notCompacted, e.e)
+	}
+
+	newEntriesFile, err := os.Create(s.entriesPath + ".new")
+	if err != nil {
+		return err
+	}
+
+	newEntries, err := writeEntries(newEntriesFile, entry{}, notCompacted)
+	if err != nil {
+		return err
+	}
+	_ = newEntriesFile.Close()
+	err = os.Rename(newEntriesFile.Name(), s.entriesPath)
+	if err != nil {
+		return err
+	}
+
+	newEntriesFile, err = os.OpenFile(s.entriesPath, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	s.entriesFile.Close()
+	s.entriesFile = newEntriesFile
+	s.entries = newEntries
+
 	return nil
 }
 
