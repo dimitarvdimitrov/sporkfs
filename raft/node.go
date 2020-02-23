@@ -180,22 +180,21 @@ func (s *node) processSnapshot(snapshot etcdraftpb.Snapshot) {
 }
 
 func (s *node) process(e etcdraftpb.Entry) {
-	log.Debug("processing raft entry")
 	switch e.Type {
 	case etcdraftpb.EntryConfChange:
 		var cc etcdraftpb.ConfChange
 		_ = cc.Unmarshal(e.Data)
-		cc.NodeID = 0 // we cancel the conf change since Spork currently doesn't support configuration changes
 		s.raft.ApplyConfChange(cc)
 
 	case etcdraftpb.EntryNormal:
+		log.Debug("[node] processing normal raft entry", zap.Uint64("index", e.Index))
 		msg := &raftpb.Entry{}
 		if err := proto.Unmarshal(e.Data, msg); err != nil {
 			log.Error("couldn't decode entry", zap.ByteString("entry", e.Data))
 			break
 		}
 
-		callback := s.unactionedEntries.watch(msg.Id)
+		callback := s.unactionedEntries.watch(e.Index)
 		s.commitC <- UnactionedMessage{
 			Entry:  msg,
 			Action: callback,

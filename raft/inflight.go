@@ -49,6 +49,12 @@ func (i *inFlight) watch(id uint64) func() {
 	if len(i.unconfirmed) == 0 {
 		i.firstId = id
 	}
+
+	// fill in the gap if not all entries had to be watched
+	for j := i.firstId + 1; j < id-1; j++ {
+		i.unconfirmed = append(i.unconfirmed, true)
+	}
+
 	i.unconfirmed = append(i.unconfirmed, false)
 	return i.pruneFunc(id)
 }
@@ -58,7 +64,7 @@ func (i *inFlight) pruneFunc(id uint64) func() {
 		i.Lock()
 		defer i.Unlock()
 
-		i.unconfirmed[i.firstId-id] = true
+		i.unconfirmed[id-i.firstId] = true
 
 		pruneUntil := 0
 		for _, isConfirmed := range i.unconfirmed {
@@ -73,8 +79,8 @@ func (i *inFlight) pruneFunc(id uint64) func() {
 
 		if len(i.unconfirmed) == 0 && i.allDone != nil {
 			select {
-			case <-i.allDone:
-			default:
+			case <-i.allDone: // is it already closed and not waiting anymore
+			default: // or are we the last one?
 				close(i.allDone)
 			}
 		}
