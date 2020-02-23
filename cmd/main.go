@@ -68,13 +68,12 @@ func unmountWhenDone(ctx context.Context, mountpoint string, wg *sync.WaitGroup)
 	wg.Add(1)
 	go func() {
 		<-ctx.Done()
-		for done := false; !done; {
+		for done := false; !done; time.Sleep(time.Second) {
 			if err := fuse.Unmount(mountpoint); err != nil {
 				log.Error("unmount", zap.Error(err))
 			} else {
 				done = true
 			}
-			time.Sleep(time.Second)
 		}
 		wg.Done()
 	}()

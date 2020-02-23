@@ -2,6 +2,8 @@ package storage
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sync"
 
 	"github.com/coreos/etcd/raft"
@@ -14,36 +16,95 @@ type Storage interface {
 	raft.Storage
 
 	Append([]etcdraftpb.Entry) error
-	ApplySnapshot(etcdraftpb.Snapshot)
-	SetHardState(st etcdraftpb.HardState) error
-
-	Compact(uint64) error
-	CreateSnapshot(uint64, *etcdraftpb.ConfState, []byte) (etcdraftpb.Snapshot, error)
+	SaveSnapshot(etcdraftpb.Snapshot) error // save snapshot to disk and compact entries up to snapshot index
+	SetHardState(etcdraftpb.HardState)
+	HardState() *etcdraftpb.HardState
+	TryRecover()
 }
 
 type storage struct {
 	*sync.Mutex
 
-	entries   []etcdraftpb.Entry
-	hardState etcdraftpb.HardState
-	confState etcdraftpb.ConfState
+	location string // location of snapshot on local filesystem
 
-	snap *etcdraftpb.Snapshot
+	entries   []etcdraftpb.Entry
+	hardState *etcdraftpb.HardState
+	snap      etcdraftpb.Snapshot
 }
 
-func NewStorage(location string) *storage {
-	return &storage{}
+func New(location string) *storage {
+	return &storage{
+		Mutex:     &sync.Mutex{},
+		location:  location + "/snapshot",
+		entries:   []etcdraftpb.Entry{{}}, // the dummy entry
+		hardState: &etcdraftpb.HardState{},
+		snap: etcdraftpb.Snapshot{
+			Data: nil,
+			Metadata: etcdraftpb.SnapshotMetadata{
+				ConfState: etcdraftpb.ConfState{
+					Nodes:                []uint64{1, 2, 3, 4},
+					Learners:             nil,
+					XXX_NoUnkeyedLiteral: struct{}{},
+					XXX_unrecognized:     nil,
+					XXX_sizecache:        0,
+				},
+			},
+			XXX_NoUnkeyedLiteral: struct{}{},
+			XXX_unrecognized:     nil,
+			XXX_sizecache:        0,
+		},
+	}
+}
+
+// recover should read the snapshot from its location and:
+// 	1. populate entries with a dummy entry with the index and term of the snapshot
+// 	2. set the snapshot filed for later uses
+func (s *storage) TryRecover() {
+	s.Lock()
+	defer s.Unlock()
+
+	f, err := os.OpenFile(s.location, os.O_RDONLY, 0)
+	if err != nil {
+		log.Error("couldn't open persisted snapshot, starting fresh", zap.Error(err))
+		return
+	}
+	defer f.Close()
+
+	snapBytes, err := ioutil.ReadAll(f)
+	if err != nil {
+		log.Error("couldn't read persisted snapshot, starting fresh", zap.Error(err))
+	}
+
+	err = s.snap.Unmarshal(snapBytes)
+	if err != nil {
+		log.Error("couldn't unmarshal persisted snap", zap.Error(err))
+	}
+	s.entries[0].Index = s.snap.Metadata.Index
+	s.entries[0].Term = s.snap.Metadata.Term
 }
 
 func (s *storage) InitialState() (etcdraftpb.HardState, etcdraftpb.ConfState, error) {
-	panic("implement me")
-}
-
-func (s *storage) Entries(lo, hi, maxSize uint64) ([]etcdraftpb.Entry, error) {
 	s.Lock()
 	defer s.Unlock()
-	firstIndex := s.entries[0].Index
-	if lo <= firstIndex {
+
+	return *s.hardState, s.snap.Metadata.ConfState, nil
+}
+
+func (s *storage) Entries(lo, hi, maxSize uint64) (entries []etcdraftpb.Entry, e error) {
+	s.Lock()
+	defer s.Unlock()
+
+	defer func() {
+		if len(entries) > 0 {
+			log.Debug("[storage] returning entries", zap.Uint64("first_index", entries[0].Index), zap.Uint64("last_index", entries[len(entries)-1].Index))
+		}
+		if e != nil {
+			log.Debug("[storage] returning entries error", zap.Error(e))
+		}
+	}()
+
+	firstIndex := s.firstIndex()
+	if lo < firstIndex {
 		return nil, raft.ErrCompacted
 	}
 	if hi-1 > s.lastIndex() {
@@ -58,49 +119,54 @@ func (s *storage) Entries(lo, hi, maxSize uint64) ([]etcdraftpb.Entry, error) {
 		return nil, raft.ErrUnavailable
 	}
 
-	ents := s.entries[lo-firstIndex : hi-firstIndex]
+	off := s.entries[0].Index
+	ents := s.entries[lo-off : hi-off]
 	return limitSize(ents, maxSize), nil
 }
 
-// limitSize returns the starting sub-slice of entries whose collective size does not exceed maxSize
-func limitSize(ents []etcdraftpb.Entry, maxSize uint64) []etcdraftpb.Entry {
-	size := 0
+// limitSize returns the starting sub-slice of entries whose collective size does not exceed maxSize. It returns at
+// least one entry if entries is not empty
+func limitSize(entries []etcdraftpb.Entry, maxSize uint64) []etcdraftpb.Entry {
+	if len(entries) == 0 {
+		return entries
+	}
+	size := uint64(entries[0].Size())
 	var i int
-	for i = 0; i < len(ents); i++ {
-		size += ents[i].Size()
-		if uint64(size) > maxSize {
+	for i = 0; i < len(entries); i++ {
+		size += uint64(entries[i].Size())
+		if size > maxSize {
 			break
 		}
 	}
-	return ents[:i]
+	return entries[:i]
 }
 
 func (s *storage) lastIndex() uint64 {
-	return uint64(len(s.entries)) - 1 + s.entries[0].Index
+	return uint64(len(s.entries)) + s.entries[0].Index - 1
 }
 
-func (s *storage) Term(i uint64) (uint64, error) {
+func (s *storage) Term(i uint64) (t uint64, _ error) {
 	s.Lock()
 	defer s.Unlock()
 
-	firstIndex := s.entries[0].Term
-	if i < firstIndex {
+	dummyIndex := s.entries[0].Index
+	if i < dummyIndex {
 		return 0, raft.ErrCompacted
 	}
 	if i > s.lastIndex() {
 		return 0, raft.ErrUnavailable
 	}
-	return s.entries[i-firstIndex].Term, nil
+	return s.entries[i-dummyIndex].Term, nil
 }
 
-func (s *storage) LastIndex() (uint64, error) {
+func (s *storage) LastIndex() (i uint64, _ error) {
 	s.Lock()
 	defer s.Unlock()
 
 	return s.lastIndex(), nil
 }
 
-func (s *storage) FirstIndex() (uint64, error) {
+func (s *storage) FirstIndex() (i uint64, _ error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -115,16 +181,18 @@ func (s *storage) Snapshot() (etcdraftpb.Snapshot, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.snap == nil {
-		return etcdraftpb.Snapshot{}, raft.ErrSnapshotTemporarilyUnavailable
-	}
-	return *s.snap, nil
+	return s.snap, raft.ErrSnapshotTemporarilyUnavailable
 }
 
 func (s *storage) Append(entries []etcdraftpb.Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
 	s.Lock()
 	defer s.Unlock()
 
+	log.Debug("[storage] appending entries", zap.Uint64("first_index", entries[0].Index), zap.Uint64("last_index", entries[len(entries)-1].Index))
 	first, last := s.firstIndex(), s.lastIndex()
 
 	// if we are getting entries which we have already compacted, truncate them
@@ -137,19 +205,47 @@ func (s *storage) Append(entries []etcdraftpb.Entry) error {
 		return fmt.Errorf("missing log entries; last: %d, appending: %d", last, entries[0].Index)
 	}
 
-	s.entries = append(s.entries[:len(entries)-overwriteOffset], entries...)
+	s.entries = append(s.entries[:len(s.entries)-overwriteOffset], entries...)
 	return nil
 }
 
-// only this and CreateSnapshot need to write to disk
-func (s *storage) ApplySnapshot(etcdraftpb.Snapshot) {
-	panic("implement me")
-}
-
-func (s *storage) Compact(compactIndex uint64) error {
+func (s *storage) SaveSnapshot(snap etcdraftpb.Snapshot) error {
 	s.Lock()
 	defer s.Unlock()
 
+	s.snap = snap
+	if err := s.writeSnapshot(snap); err != nil {
+		return err
+	}
+	if err := s.compact(snap.Metadata.Index); err != nil && err != raft.ErrCompacted {
+		return fmt.Errorf("compacting: %w", err)
+	}
+	return nil
+}
+
+func (s *storage) writeSnapshot(snapshot etcdraftpb.Snapshot) error {
+	f, err := os.Create(s.location)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	snapBytes, err := snapshot.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshalling snapshot: %w", err)
+	}
+
+	n, err := f.Write(snapBytes)
+	if err != nil {
+		return fmt.Errorf("persisting snapshot: %w", err)
+	}
+	if n < len(snapshot.Data) {
+		return fmt.Errorf("couldn't write all of snapshot")
+	}
+	return nil
+}
+
+func (s *storage) compact(compactIndex uint64) error {
 	dummyIndex := s.entries[0].Index
 	if compactIndex <= dummyIndex {
 		return raft.ErrCompacted
@@ -166,15 +262,16 @@ func (s *storage) Compact(compactIndex uint64) error {
 	return nil
 }
 
-// only this and ApplySnapshot need to write to disk
-func (s *storage) CreateSnapshot(uint64, *etcdraftpb.ConfState, []byte) (etcdraftpb.Snapshot, error) {
-	panic("implement me")
-}
-
-func (s *storage) SetHardState(st etcdraftpb.HardState) error {
+func (s *storage) SetHardState(st etcdraftpb.HardState) {
 	s.Lock()
 	defer s.Unlock()
 
-	s.hardState = st
-	return nil
+	*s.hardState = st
+}
+
+func (s *storage) HardState() *etcdraftpb.HardState {
+	s.Lock()
+	defer s.Unlock()
+
+	return s.hardState
 }
