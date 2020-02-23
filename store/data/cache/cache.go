@@ -14,7 +14,7 @@ type Cache interface {
 
 	// KeepAlive will reset the expiry time of the file. You don't have to
 	// call it manually, it will be called before all read/write methods of the cache except Remove.
-	KeepAlive(id, hash uint64)
+	KeepAlive(id, version uint64)
 }
 
 type cache struct {
@@ -66,11 +66,7 @@ func (c *cache) Size(id, version uint64) int64 {
 	return c.data.Size(id, version)
 }
 
-func (c *cache) Sync() {
-	c.data.Sync()
-}
-
-func (c *cache) KeepAlive(id, hash uint64) {
+func (c *cache) KeepAlive(id, version uint64) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -78,24 +74,24 @@ func (c *cache) KeepAlive(id, hash uint64) {
 		c.alive[id] = make(map[uint64]*time.Timer)
 	}
 
-	if t, ok := c.alive[id][hash]; ok {
+	if t, ok := c.alive[id][version]; ok {
 		t.Stop()
 	}
-	c.alive[id][hash] = time.AfterFunc(expiry, c.cleanFunc(id, hash))
+	c.alive[id][version] = time.AfterFunc(expiry, c.cleanFunc(id, version))
 }
 
-func (c *cache) cleanFunc(id, hash uint64) func() {
+func (c *cache) cleanFunc(id, version uint64) func() {
 	return func() {
 		c.Lock()
 		defer c.Unlock()
 
-		if c.alive[id][hash].Stop() {
-			c.alive[id][hash] = time.AfterFunc(expiry, c.cleanFunc(id, hash))
+		if c.alive[id][version].Stop() {
+			c.alive[id][version] = time.AfterFunc(expiry, c.cleanFunc(id, version))
 			return
 		}
 
-		c.Remove(id, hash)
-		delete(c.alive[id], hash)
+		c.Remove(id, version)
+		delete(c.alive[id], version)
 		if len(c.alive[id]) == 0 {
 			delete(c.alive, id)
 		}
@@ -105,12 +101,12 @@ func (c *cache) cleanFunc(id, hash uint64) func() {
 func (c *cache) keepAliveAll(id uint64) {
 	c.Lock()
 	toKeepAlive := make([]uint64, 0, len(c.alive[id]))
-	for hash := range c.alive[id] {
-		toKeepAlive = append(toKeepAlive, hash)
+	for version := range c.alive[id] {
+		toKeepAlive = append(toKeepAlive, version)
 	}
 	c.Unlock()
 
-	for _, hash := range toKeepAlive {
-		c.KeepAlive(id, hash)
+	for _, version := range toKeepAlive {
+		c.KeepAlive(id, version)
 	}
 }

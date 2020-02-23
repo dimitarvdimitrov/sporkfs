@@ -79,7 +79,7 @@ func (s Spork) watchRaft() {
 			file.Parent.Unlock()
 		case *raftpb.Entry_Change:
 			req := msg.Change
-			log.Debug("processing change raft entry", log.Id(req.Id), log.Hash(req.Hash))
+			log.Debug("processing change raft entry", log.Id(req.Id), log.Ver(req.Version))
 
 			file, err := s.inventory.Get(req.Id)
 			if err != nil {
@@ -88,9 +88,9 @@ func (s Spork) watchRaft() {
 			}
 
 			file.Lock()
-			oldHash := file.Hash
+			oldVersion := file.Version
 			now := time.Now()
-			file.Hash = req.Hash
+			file.Version = req.Version
 			file.Size = int64(req.Offset) + req.Size
 			file.Mtime, file.Atime = now, now
 
@@ -102,11 +102,11 @@ func (s Spork) watchRaft() {
 					dest = s.data
 				}
 
-				if err := s.updateLocalFile(req.Id, oldHash, req.Hash, peer, dest); err != nil {
+				if err := s.updateLocalFile(req.Id, oldVersion, req.Version, peer, dest); err != nil {
 					log.Error("transferring changed file from raft", zap.Error(err))
 				} else {
-					if oldHash != req.Hash {
-						dest.Remove(file.Id, oldHash)
+					if oldVersion != req.Version {
+						dest.Remove(file.Id, oldVersion)
 					}
 				}
 			}

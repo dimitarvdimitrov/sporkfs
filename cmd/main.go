@@ -26,6 +26,9 @@ func main() {
 	cfgLocation := flag.Arg(0)
 
 	cfg := parseConfig(cfgLocation)
+	if err := os.MkdirAll(cfg.Raft.SnapshotDir, 0777); err != nil {
+		log.Fatal("couldn't create backing storage directory", zap.Error(err))
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 

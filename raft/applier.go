@@ -66,13 +66,13 @@ func (w *applier) watchCommits() {
 	}
 }
 
-func (w *applier) ProposeChange(id, hash, offset, peer uint64, size int64) (bool, func()) {
+func (w *applier) ProposeChange(id, version, offset, peer uint64, size int64) (bool, func()) {
 	c := &raftpb.Change{
-		Id:     id,
-		Hash:   hash,
-		Offset: offset,
-		Size:   size,
-		PeerId: peer,
+		Id:      id,
+		Version: version,
+		Offset:  offset,
+		Size:    size,
+		PeerId:  peer,
 	}
 	entry := &raftpb.Entry{
 		Message: &raftpb.Entry_Change{Change: c},

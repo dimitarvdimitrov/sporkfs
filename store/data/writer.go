@@ -11,10 +11,8 @@ type segmentedWriter struct {
 		io.WriterAt
 	} // to be replaced with a set of chunks
 
-	// onClose will be called when Close() has been called
 	onClose func()
 	sync    func()
-	hash    hashFunc
 	once    sync.Once
 }
 
@@ -27,9 +25,8 @@ func (wc *segmentedWriter) Write(p []byte) (int, error) {
 }
 
 // Close can be called multiple times. Any call after the first is a noop
-func (wc *segmentedWriter) Close() uint64 {
+func (wc *segmentedWriter) Close() {
 	wc.once.Do(wc.onClose)
-	return wc.hash()
 }
 
 func (wc *segmentedWriter) Sync() {

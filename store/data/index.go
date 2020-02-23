@@ -1,18 +1,17 @@
 package data
 
 import (
-	"crypto/sha1"
-	"encoding/binary"
 	"encoding/json"
-	"math/big"
+	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"go.uber.org/zap"
 )
 
 type index map[uint64]map[uint64]string // maps file ids to location
-
 // TODO remove
 func (d *localDriver) Sync() {
 	log.Info("persisting data index")
@@ -35,35 +34,41 @@ func (d *localDriver) persistIndex() {
 	}
 }
 
-// restoreIndex decodes the stored index at the location and returns it.
+// buildIndex decodes the stored index at the location and returns it.
 // If it doesn't exist, it returns an empty
-func restoreIndex(location string) index {
+func buildIndex(location string) (idx index) {
 	log.Debug("restoring file index", zap.String("from", location))
-	index := make(index)
-	f, err := os.Open(location + "/index")
-	if err != nil {
-		log.Error("couldn't load persisted index, starting fresh: %s", zap.Error(err))
-		return map[uint64]map[uint64]string{}
-	}
-	defer f.Close()
+	idx = make(index)
 
-	d := json.NewDecoder(f)
-	err = d.Decode(&index)
+	storageDir, err := os.Open(location)
 	if err != nil {
-		log.Error("couldn't load persisted index, starting fresh: %s", zap.Error(err))
-		return map[uint64]map[uint64]string{}
+		log.Error("[data] couldn't read local files dir; starting fresh")
+		return
 	}
-	return index
+	files, err := storageDir.Readdir(-1)
+	if err != nil {
+		log.Error("[data] couldn't read existing local files; starting fresh")
+		return
+	}
+
+	for _, f := range files {
+		nameComponents := strings.SplitN(f.Name(), "-", -1)
+		if len(nameComponents) != 2 {
+			continue
+		}
+		id, err1 := strconv.ParseUint(nameComponents[0], 10, 64)
+		version, err2 := strconv.ParseUint(nameComponents[1], 10, 64)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		if idx[id] == nil {
+			idx[id] = make(map[uint64]string)
+		}
+		idx[id][version] = f.Name()
+	}
+	return
 }
 
-// generateStorageLocation returns a unique file name based on the file ID and the current hash
-func generateStorageLocation(id, hash uint64) string {
-	var msg [16]byte
-	binary.BigEndian.PutUint64(msg[:8], id)
-	binary.BigEndian.PutUint64(msg[8:], hash)
-
-	hasher := sha1.New()
-	_, _ = hasher.Write(msg[:])
-
-	return (&big.Int{}).SetBytes(hasher.Sum(nil)).String()
+func generateStorageLocation(id, version uint64) string {
+	return fmt.Sprintf("%d-%d", id, version)
 }

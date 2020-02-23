@@ -5,7 +5,7 @@ import (
 )
 
 type Driver interface {
-	// Contains will return true of false if the file is present. It will always return true for the zero-hash file
+	// Contains will return true of false if the file is present. It will always return true for the zero-version file
 	// regardless of the id.
 	Contains(id, version uint64) bool
 	ContainsAny(id uint64) bool
@@ -17,7 +17,6 @@ type Driver interface {
 	Reader(id, version uint64, flags int) (Reader, error)
 	Remove(id, version uint64)
 	Size(id, version uint64) int64
-	Sync() // TODO remove
 
 	// Write will return a Writer to the file and version with the flags.
 	// If the version is 0, a new empty file will be created and returned.
@@ -30,7 +29,7 @@ type Reader interface {
 }
 
 type Writer interface {
-	HashCloser
+	Closer
 	Syncer
 	io.WriterAt
 	io.Writer
@@ -40,9 +39,6 @@ type Syncer interface {
 	Sync()
 }
 
-// HashCloser should return the new hash of a file on a close
-type HashCloser interface {
-	Close() uint64
+type Closer interface {
+	Close()
 }
-
-type hashFunc func() uint64

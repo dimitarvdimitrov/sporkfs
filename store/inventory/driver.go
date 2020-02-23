@@ -24,7 +24,7 @@ func NewDriver() (Driver, error) {
 		Id:       0,
 		Mode:     store.ModeDirectory | 0777,
 		Size:     1,
-		Hash:     0,
+		Version:  0,
 		Children: nil,
 		Atime:    now,
 		Mtime:    now,

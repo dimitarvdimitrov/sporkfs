@@ -42,8 +42,8 @@ func Id(id uint64) zap.Field {
 	return zap.Uint64("id", id)
 }
 
-func Hash(h uint64) zap.Field {
-	return zap.Uint64("hash", h)
+func Ver(h uint64) zap.Field {
+	return zap.Uint64("version", h)
 }
 
 func Name(n string) zap.Field {

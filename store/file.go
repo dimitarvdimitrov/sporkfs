@@ -18,13 +18,13 @@ const (
 type File struct {
 	*sync.RWMutex
 
-	Id    uint64
-	Name  string
-	Mode  FileMode
-	Size  int64
-	Hash  uint64 // TODO change this to version and make it random for each file creation
-	Atime time.Time
-	Mtime time.Time
+	Id      uint64
+	Name    string
+	Mode    FileMode
+	Size    int64
+	Version uint64
+	Atime   time.Time
+	Mtime   time.Time
 
 	Parent   *File
 	Children []*File

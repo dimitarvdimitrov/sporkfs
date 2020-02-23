@@ -16,7 +16,7 @@ import (
 // and calling it will be a noop.
 type Committer interface {
 	Add(id, parentId uint64, name string, mode store.FileMode) (bool, func())
-	Change(id, hash, offset uint64, size int64) (bool, func())
+	Change(id, version, offset uint64, size int64) (bool, func())
 	Rename(id, oldParentId, newParentId uint64, newName string) (bool, func())
 	Delete(id, parentId uint64) (bool, func())
 }
@@ -41,8 +41,8 @@ func (r *Raft) Add(id, parentId uint64, name string, mode store.FileMode) (bool,
 	return r.a.ProposeAdd(id, parentId, name, mode)
 }
 
-func (r *Raft) Change(id, hash, offset uint64, size int64) (bool, func()) {
-	return r.a.ProposeChange(id, hash, offset, r.n.peers.thisPeerRaftId(), size)
+func (r *Raft) Change(id, version, offset uint64, size int64) (bool, func()) {
+	return r.a.ProposeChange(id, version, offset, r.n.peers.thisPeerRaftId(), size)
 }
 
 func (r *Raft) Rename(id, oldParentId, newParentId uint64, newName string) (bool, func()) {

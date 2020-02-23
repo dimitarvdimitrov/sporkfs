@@ -65,7 +65,7 @@ func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
 				_ = server.InvalidateEntry(p, file.Name)
 				_ = server.InvalidateNodeData(p)
 			}
-			log.Debug("invalidated file and its parent entry", log.Id(file.Id), log.Hash(file.Hash), log.Name(file.Name))
+			log.Debug("invalidated file and its parent entry", log.Id(file.Id), log.Ver(file.Version), log.Name(file.Name))
 		case <-ctx.Done():
 			return
 		}

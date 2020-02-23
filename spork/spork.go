@@ -126,14 +126,14 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 	f.Lock()
 	defer f.Unlock()
-	log.Debug("opening file for read/write", log.Id(f.Id), log.Hash(f.Hash))
+	log.Debug("opening file for read/write", log.Id(f.Id), log.Ver(f.Version))
 
 	driver, err := s.ensureFile(f)
 	if err != nil {
 		return nil, err
 	}
 
-	r, w, err := driver.Open(f.Id, f.Hash, flags)
+	r, w, err := driver.Open(f.Id, f.Version, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -144,13 +144,13 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			r: r,
 		},
 		w: &writer{
-			startingHash: f.Hash,
-			f:            f,
-			fileSizer:    driver,
-			fileRemover:  driver,
-			w:            w,
-			invalidate:   s.invalid,
-			changer:      s.raft,
+			startingVersion: f.Version,
+			f:               f,
+			fileSizer:       driver,
+			fileRemover:     driver,
+			w:               w,
+			invalidate:      s.invalid,
+			changer:         s.raft,
 		},
 	}
 	return rw, nil
@@ -165,7 +165,7 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 		return nil, err
 	}
 
-	r, err := driver.Reader(f.Id, f.Hash, flags)
+	r, err := driver.Reader(f.Id, f.Version, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (s Spork) ensureFile(f *store.File) (storedata.Driver, error) {
 		driver = s.cache
 	}
 
-	err := s.maybeTransferRemoteFile(f.Id, f.Hash, driver)
+	err := s.maybeTransferRemoteFile(f.Id, f.Version, driver)
 	if err != nil {
 		return nil, err
 	}
@@ -194,32 +194,32 @@ func (s Spork) ensureFile(f *store.File) (storedata.Driver, error) {
 
 func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver) error {
 	if dst.Contains(id, version) {
-		log.Debug("file already present in destination", log.Id(id), log.Hash(version))
+		log.Debug("file already present in destination", log.Id(id), log.Ver(version))
 		return nil
 	}
-	log.Debug("transferring remote file", log.Id(id), log.Hash(version))
+	log.Debug("transferring remote file", log.Id(id), log.Ver(version))
 
 	w, err := dst.Writer(id, 0, os.O_TRUNC)
 	if err != nil {
-		return fmt.Errorf("writing file to destination id:%d, hash:%d, err:%w", id, version, err)
+		return fmt.Errorf("writing file to destination id:%d, version:%d, err:%w", id, version, err)
 	}
 	defer w.Close()
 
 	r, err := s.fetcher.Reader(id, version)
 	if err != nil {
-		return fmt.Errorf("initing fetcher for id:%d, hash:%d, err:%w", id, version, err)
+		return fmt.Errorf("initing fetcher for id:%d, version:%d, err:%w", id, version, err)
 	}
 	defer r.Close()
 
 	_, err = io.Copy(w, r)
 	if err != nil {
-		return fmt.Errorf("error during stream transfer of id:%d, hash: %d, err:%w", id, version, err)
+		return fmt.Errorf("error during stream transfer of id:%d, version:%d, err:%w", id, version, err)
 	}
 	return nil
 }
 
 func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint string, dst storedata.Driver) error {
-	log.Debug("transferring remote file", log.Id(id), log.Hash(newVersion), zap.Uint64("old_hash", oldVersion))
+	log.Debug("transferring remote file", log.Id(id), log.Ver(newVersion), zap.Uint64("old_version", oldVersion))
 	if dst.Contains(id, newVersion) {
 		return nil
 	}
@@ -288,6 +288,7 @@ func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 	return &store.File{
 		RWMutex:  &sync.RWMutex{},
 		Id:       s.inventory.NewId(),
+		Version:  0,
 		Name:     name,
 		Mode:     mode,
 		Size:     0,
@@ -374,8 +375,8 @@ func (s Spork) Delete(file *store.File) error {
 }
 
 func (s Spork) delete(file *store.File) {
-	s.data.Remove(file.Id, file.Hash)
-	s.cache.Remove(file.Id, file.Hash)
+	s.data.Remove(file.Id, file.Version)
+	s.cache.Remove(file.Id, file.Version)
 	s.inventory.Remove(file.Id)
 
 	for i, c := range file.Parent.Children {

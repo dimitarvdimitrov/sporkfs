@@ -4,8 +4,8 @@ option go_package = "raftpb";
 message Change {
     // id of the file that was changed
     uint64 id = 1;
-    // new hash of the file
-    uint64 hash = 2;
+    // new version of the file
+    uint64 version = 2;
     // where the change starts (unused for now)
     uint64 offset = 3;
     // size of the change
