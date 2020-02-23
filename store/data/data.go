@@ -166,7 +166,6 @@ func (d *localDriver) Writer(id, version uint64, flags int) (Writer, error) {
 		flags |= os.O_TRUNC
 	}
 
-	// TODO this shouldn't be needed. same somewhere above
 	if flags&os.O_CREATE != 0 {
 		flags ^= os.O_CREATE
 	}

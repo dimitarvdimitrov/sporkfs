@@ -20,7 +20,9 @@ type Storage interface {
 	raft.Storage
 
 	Append([]etcdraftpb.Entry) error
-	SaveSnapshot(index uint64, data []byte, confState etcdraftpb.ConfState) error // save snapshot to disk and compact entries up to snapshot index
+	HardState() etcdraftpb.HardState
+	// save snapshot to disk and compact entries up to snapshot index
+	SaveSnapshot(index uint64, data []byte, confState etcdraftpb.ConfState) error
 	SetHardState(etcdraftpb.HardState) error
 }
 
@@ -54,7 +56,7 @@ type storage struct {
 	entriesFile *os.File
 }
 
-func New(location string) *storage {
+func New(location string, confState etcdraftpb.ConfState) *storage {
 	s := &storage{
 		Mutex:         &sync.Mutex{},
 		snapshotPath:  location + "/snapshot",
@@ -62,21 +64,11 @@ func New(location string) *storage {
 		hardStatePath: location + "/hardState",
 		hardState:     etcdraftpb.HardState{},
 		entries:       []entry{{}},
-		// TODO clean these up
 		snap: etcdraftpb.Snapshot{
 			Data: nil,
 			Metadata: etcdraftpb.SnapshotMetadata{
-				ConfState: etcdraftpb.ConfState{
-					Nodes:                []uint64{1, 2, 3, 4},
-					Learners:             nil,
-					XXX_NoUnkeyedLiteral: struct{}{},
-					XXX_unrecognized:     nil,
-					XXX_sizecache:        0,
-				},
+				ConfState: confState,
 			},
-			XXX_NoUnkeyedLiteral: struct{}{},
-			XXX_unrecognized:     nil,
-			XXX_sizecache:        0,
 		},
 	}
 
@@ -327,6 +319,10 @@ func (s *storage) SetHardState(st etcdraftpb.HardState) error {
 
 	s.hardState = st
 	return nil
+}
+
+func (s *storage) HardState() etcdraftpb.HardState {
+	return s.hardState
 }
 
 func (s *storage) write(path string, msg proto.Marshaler) error {

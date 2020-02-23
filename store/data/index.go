@@ -1,7 +1,6 @@
 package data
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -12,27 +11,6 @@ import (
 )
 
 type index map[uint64]map[uint64]string // maps file ids to location
-// TODO remove
-func (d *localDriver) Sync() {
-	log.Info("persisting data index")
-	d.persistIndex()
-}
-
-func (d *localDriver) persistIndex() {
-	f, err := os.Create(d.storageRoot + "/index")
-	if err != nil {
-		log.Error("couldn't persist index", zap.String("location", d.storageRoot), zap.Error(err))
-		return
-	}
-	defer f.Close()
-
-	d.indexM.RLock()
-	err = json.NewEncoder(f).Encode(d.index)
-	d.indexM.RUnlock()
-	if err != nil {
-		log.Error("persisting storage index", zap.String("location", d.storageRoot), zap.Error(err))
-	}
-}
 
 // buildIndex decodes the stored index at the location and returns it.
 // If it doesn't exist, it returns an empty

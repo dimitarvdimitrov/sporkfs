@@ -17,11 +17,10 @@ import (
 	"google.golang.org/grpc"
 )
 
-// TODO revisit these times
 const (
 	bcastTime       = time.Millisecond * 10 // usual time it takes to send a message and receive a reply
-	heartbeatTime   = bcastTime * 5
-	electionTimeout = heartbeatTime * 10
+	heartbeatPeriod = bcastTime * 5
+	electionTimeout = heartbeatPeriod * 10
 )
 
 type node struct {
@@ -32,42 +31,23 @@ type node struct {
 	clients map[string]raftpb.RaftClient
 	peers   *Peers
 
-	t                 *time.Ticker
-	commitC           chan<- UnactionedMessage
-	proposeC          <-chan *raftpb.Entry
-	unactionedEntries *inFlight // TODO rename to entryTracker
+	t            *time.Ticker
+	commitC      chan<- UnactionedMessage
+	proposeC     <-chan *raftpb.Entry
+	entryTracker *entryTracker
 
 	done chan struct{}
 	wg   *sync.WaitGroup
 }
 
 func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*node, <-chan UnactionedMessage, chan<- *raftpb.Entry) {
-	s := storage.New(storeLocation)
-	//confState := &etcdraftpb.ConfState{}
-	//stateSources = append(stateSources,
-	//	marshallableState{name: "confState", c: confState},
-	//	marshallableState{name: "hardState", c: s.HardState()},
-	//)
-	//
-	//snapshotter := newSnapshotter(stateSources...)
-	//
-	//snap, err := s.Snapshot()
-	//if err != nil {
-	//	log.Panic("couldn't get a storage snapshot", zap.Error(err))
-	//}
-	//if !raft.IsEmptySnap(snap) {
-	//	r := bytes.NewReader(snap.Data)
-	//	err = snapshotter.recoverSnap(r, int64(r.Len()))
-	//	if err != nil {
-	//		log.Panic("recovering state", zap.Error(err))
-	//	}
-	//}
+	s := storage.New(storeLocation, peers.confState())
 
 	config := &raft.Config{
-		ID:            uint64(peers.thisPeer) + 1,
-		ElectionTick:  int(electionTimeout/heartbeatTime) * 10,
-		HeartbeatTick: 10,
-		//Applied:         88,
+		ID:              uint64(peers.thisPeer) + 1,
+		ElectionTick:    int(electionTimeout/heartbeatPeriod) * 5,
+		HeartbeatTick:   5,
+		Applied:         0, // why bother with replaying since raft can do it for us?
 		Storage:         s,
 		MaxInflightMsgs: 256,
 		MaxSizePerMsg:   math.MaxUint64,
@@ -84,30 +64,22 @@ func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*
 		log.Fatal("couldn't dial peer", zap.Error(err))
 	}
 
-	var raftNode raft.Node
-	//if raft.IsEmptySnap(snap) {
-	//raftNode = raft.StartNode(config, peers.raftPeers())
-	//} else {
-
-	raftNode = raft.RestartNode(config)
-	//}
+	raftNode := raft.RestartNode(config)
 
 	commitC := make(chan UnactionedMessage)
 	proposeC := make(chan *raftpb.Entry)
 
 	node := &node{
-		raft:    raftNode,
-		storage: s,
-		//confState:         confState,
-		//snapshotter:       snapshotter,
-		clients:           clients,
-		peers:             peers,
-		t:                 time.NewTicker(heartbeatTime / 10),
-		commitC:           commitC,
-		proposeC:          proposeC,
-		unactionedEntries: newInFlight(),
-		done:              make(chan struct{}),
-		wg:                &sync.WaitGroup{},
+		raft:         raftNode,
+		storage:      s,
+		clients:      clients,
+		peers:        peers,
+		t:            time.NewTicker(bcastTime),
+		commitC:      commitC,
+		proposeC:     proposeC,
+		entryTracker: newInFlight(),
+		done:         make(chan struct{}),
+		wg:           &sync.WaitGroup{},
 	}
 	node.wg.Add(2)
 	go node.runRaft()
@@ -176,6 +148,7 @@ func (s *node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.En
 		}
 	}
 
+	// TODO uncomment
 	//if !raft.IsEmptySnap(snapshot) {
 	//	if err := s.storage.SaveSnapshot(snapshot); err != nil {
 	//		log.Error("saving hard state", zap.Error(err))
@@ -244,9 +217,9 @@ func (s *node) maybeCreateSnapshot() {
 		return
 	}
 
-	s.unactionedEntries.pause()
-	defer s.unactionedEntries.resume()
-	s.unactionedEntries.wait()
+	s.entryTracker.pause()
+	defer s.entryTracker.resume()
+	s.entryTracker.wait()
 
 	buff := &bytes.Buffer{}
 	err = s.snapshotter.createSnap(buff)
@@ -279,7 +252,7 @@ func (s *node) process(e etcdraftpb.Entry) {
 			break
 		}
 
-		callback := s.unactionedEntries.watch(e.Index)
+		callback := s.entryTracker.watch(e.Index)
 		s.commitC <- UnactionedMessage{
 			Entry:  msg,
 			Action: callback,

@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/coreos/etcd/raft"
+	"github.com/coreos/etcd/raft/raftpb"
 )
 
 const maxId = math.MaxUint64
@@ -90,6 +91,14 @@ func (p Peers) raftPeers() []raft.Peer {
 		rp[i] = raft.Peer{ID: uint64(i + 1)}
 	}
 	return rp
+}
+
+func (p Peers) confState() raftpb.ConfState {
+	nodes := make([]uint64, p.Len())
+	for i := range p.p {
+		nodes[i] = uint64(i + 1)
+	}
+	return raftpb.ConfState{Nodes: nodes}
 }
 
 func (p Peers) getPeer(id int) string {

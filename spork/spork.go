@@ -275,7 +275,6 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 	return f, nil
 }
 
-// TODO remove children with the same name as file from parent
 func (s Spork) add(file *store.File, parent *store.File) {
 	s.inventory.Add(file)
 	file.Parent = parent
