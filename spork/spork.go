@@ -133,7 +133,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 		return nil, err
 	}
 
-	r, w, err := driver.Open(f.Id, f.Version, flags)
+	r, w, err := driver.Open(f.Id, f.Version, f.Version+1, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver)
 	}
 	log.Debug("transferring remote file", log.Id(id), log.Ver(version))
 
-	w, err := dst.Writer(id, 0, os.O_TRUNC)
+	w, err := dst.Writer(id, version, version, os.O_TRUNC)
 	if err != nil {
 		return fmt.Errorf("writing file to destination id:%d, version:%d, err:%w", id, version, err)
 	}
@@ -224,7 +224,7 @@ func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint strin
 		return nil
 	}
 
-	w, err := dst.Writer(id, oldVersion, os.O_WRONLY|os.O_TRUNC)
+	w, err := dst.Writer(id, oldVersion, newVersion, os.O_WRONLY|os.O_TRUNC)
 	if err != nil {
 		return err
 	}

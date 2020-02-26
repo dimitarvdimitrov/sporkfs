@@ -99,7 +99,7 @@ func (d *localDriver) newSegReader(f *os.File) *segmentedReader {
 	}
 }
 
-func (d *localDriver) Open(id, version uint64, flags int) (Reader, Writer, error) {
+func (d *localDriver) Open(id, oldVersion, newVersion uint64, flags int) (Reader, Writer, error) {
 	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
 		flags |= os.O_TRUNC
 	}
@@ -114,12 +114,12 @@ func (d *localDriver) Open(id, version uint64, flags int) (Reader, Writer, error
 
 	flags |= os.O_RDWR
 
-	file, newLocation, err := d.handleForWriting(id, version, version+1, flags)
+	file, newLocation, err := d.handleForWriting(id, oldVersion, newVersion, flags)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	writer := d.newSegWriter(id, version, version+1, file, newLocation)
+	writer := d.newSegWriter(id, oldVersion, newVersion, file, newLocation)
 	reader := d.newSegReader(file)
 
 	return reader, writer, nil
@@ -161,7 +161,7 @@ func (d *localDriver) handleForWriting(id, oldVersion, newVersion uint64, flags 
 	return f, newLocation, err
 }
 
-func (d *localDriver) Writer(id, version uint64, flags int) (Writer, error) {
+func (d *localDriver) Writer(id, oldVersion, newVersion uint64, flags int) (Writer, error) {
 	if flags&(os.O_TRUNC|os.O_APPEND) == 0 {
 		flags |= os.O_TRUNC
 	}
@@ -172,12 +172,12 @@ func (d *localDriver) Writer(id, version uint64, flags int) (Writer, error) {
 
 	flags |= os.O_WRONLY
 
-	file, newLocation, err := d.handleForWriting(id, version, version+1, flags)
+	file, newLocation, err := d.handleForWriting(id, oldVersion, newVersion, flags)
 	if err != nil {
 		return nil, err
 	}
 
-	segWriter := d.newSegWriter(id, version, version+1, file, newLocation)
+	segWriter := d.newSegWriter(id, oldVersion, newVersion, file, newLocation)
 
 	return segWriter, nil
 }

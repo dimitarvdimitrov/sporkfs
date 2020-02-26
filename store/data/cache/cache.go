@@ -37,14 +37,16 @@ func (c *cache) Reader(id, version uint64, flags int) (data.Reader, error) {
 	return c.data.Reader(id, version, flags)
 }
 
-func (c *cache) Writer(id, version uint64, flags int) (data.Writer, error) {
-	c.KeepAlive(id, version)
-	return c.data.Writer(id, version, flags)
+func (c *cache) Writer(id, oldVersion, newVersion uint64, flags int) (data.Writer, error) {
+	c.KeepAlive(id, oldVersion)
+	c.KeepAlive(id, newVersion)
+	return c.data.Writer(id, oldVersion, newVersion, flags)
 }
 
-func (c *cache) Open(id, version uint64, flags int) (data.Reader, data.Writer, error) {
-	c.KeepAlive(id, version)
-	return c.data.Open(id, version, flags)
+func (c *cache) Open(id, oldVersion, newVersion uint64, flags int) (data.Reader, data.Writer, error) {
+	c.KeepAlive(id, oldVersion)
+	c.KeepAlive(id, newVersion)
+	return c.data.Open(id, oldVersion, newVersion, flags)
 }
 
 func (c *cache) Contains(id, version uint64) bool {
