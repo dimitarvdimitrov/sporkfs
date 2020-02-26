@@ -28,7 +28,7 @@ type Raft struct {
 
 func New(cfg Config, states ...StateSource) (*Raft, <-chan UnactionedMessage, *Peers) {
 	peers := NewPeerList(cfg)
-	n, commits, proposals := newNode(peers, cfg.SnapshotDir, states...)
+	n, commits, proposals := newNode(peers, cfg.DataDir, states...)
 	a, syncC := newApplier(commits, proposals)
 
 	return &Raft{

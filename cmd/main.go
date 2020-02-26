@@ -26,7 +26,7 @@ func main() {
 	cfgLocation := flag.Arg(0)
 
 	cfg := parseConfig(cfgLocation)
-	if err := os.MkdirAll(cfg.Raft.SnapshotDir, 0777); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0777); err != nil {
 		log.Fatal("couldn't create backing storage directory", zap.Error(err))
 	}
 
@@ -116,5 +116,6 @@ func parseConfig(dir string) (cfg spork.Config) {
 	if err != nil {
 		log.Fatal("decoding config", zap.Error(err))
 	}
+	cfg.Config.DataDir = cfg.DataDir
 	return
 }

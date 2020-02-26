@@ -54,7 +54,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 		return Spork{}, fmt.Errorf("init inventory: %s", err)
 	}
 
-	r, commits, peers := raft.New(cfg.Raft, inv)
+	r, commits, peers := raft.New(cfg.Config, inv)
 	fetcher, err := remote.NewFetcher(peers)
 	if err != nil {
 		return Spork{}, fmt.Errorf("init fetcher: %s", err)
@@ -72,7 +72,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 		deleted:   deleted,
 		wg:        &sync.WaitGroup{},
 	}
-	startGrpcServer(ctx, cancel, cfg.Raft.ThisPeer, data, c, r, s.wg)
+	startGrpcServer(ctx, cancel, cfg.Config.ThisPeer, data, c, r, s.wg)
 	s.wg.Add(1)
 	go s.watchRaft()
 
