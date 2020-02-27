@@ -49,6 +49,7 @@ func (f *File) Deserialize(r io.Reader) error {
 	return json.NewDecoder(r).Decode(f)
 }
 
+// TODO this doesn't work. It will create a separate lock for each new file even fi they have the same ID
 func (f *File) UnmarshalJSON(b []byte) error {
 	jf := &jsonFile{}
 	err := json.Unmarshal(b, jf)

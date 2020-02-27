@@ -33,7 +33,7 @@ func (d Driver) SetState(r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("setting inventory state: %w", err)
 	}
-	d.catalog = make(map[uint64]*store.File)
+	d.catalog = make(map[uint64][]*store.File)
 	catalogFiles(d.root, d.catalog)
 	return nil
 }

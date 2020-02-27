@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -72,15 +73,13 @@ func unmountWhenDone(ctx context.Context, mountpoint string, wg *sync.WaitGroup)
 	wg.Add(1)
 	go func() {
 		<-ctx.Done()
-		for i := 0; i < 3; i++ {
-			if err := fuse.Unmount(mountpoint); err != nil {
+		for done := false; !done; time.Sleep(time.Second) {
+			if err := exec.Command("fusermount", "-zu", mountpoint).Run(); err != nil {
 				log.Error("unmount", zap.Error(err))
-				time.Sleep(time.Second)
 			} else {
-				break
+				done = true
 			}
 		}
-		log.Debug("giving up mate...")
 		wg.Done()
 	}()
 }

@@ -23,6 +23,8 @@ message Rename {
     uint64 new_parent_id = 3;
     // the new name of the file
     string new_name = 4;
+    // old name
+    string old_name = 5;
 }
 
 message Delete {
@@ -30,6 +32,8 @@ message Delete {
     uint64 id = 1;
     // id of the file's parent
     uint64 parent_id = 2;
+    // name of the file
+    string name = 3;
 }
 
 message Add {

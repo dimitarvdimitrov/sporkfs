@@ -17,8 +17,8 @@ import (
 type Committer interface {
 	Add(id, parentId uint64, name string, mode store.FileMode) (bool, func())
 	Change(id, version, offset uint64, size int64) (bool, func())
-	Rename(id, oldParentId, newParentId uint64, newName string) (bool, func())
-	Delete(id, parentId uint64) (bool, func())
+	Rename(id, oldParentId, newParentId uint64, oldName, newName string) (bool, func())
+	Delete(id, parentId uint64, newName string) (bool, func())
 }
 
 type Raft struct {
@@ -45,12 +45,12 @@ func (r *Raft) Change(id, version, offset uint64, size int64) (bool, func()) {
 	return r.a.ProposeChange(id, version, offset, r.n.peers.thisPeerRaftId(), size)
 }
 
-func (r *Raft) Rename(id, oldParentId, newParentId uint64, newName string) (bool, func()) {
-	return r.a.ProposeRename(id, oldParentId, newParentId, newName)
+func (r *Raft) Rename(id, oldParentId, newParentId uint64, oldName, newName string) (bool, func()) {
+	return r.a.ProposeRename(id, oldParentId, newParentId, oldName, newName)
 }
 
-func (r *Raft) Delete(id, parentId uint64) (bool, func()) {
-	return r.a.ProposeDelete(id, parentId)
+func (r *Raft) Delete(id, parentId uint64, name string) (bool, func()) {
+	return r.a.ProposeDelete(id, parentId, name)
 }
 
 func (r *Raft) Step(ctx context.Context, e *etcdraftpb.Message) (*raftpb.Empty, error) {

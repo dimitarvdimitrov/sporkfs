@@ -151,6 +151,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			w:               w,
 			invalidate:      s.invalid,
 			changer:         s.raft,
+			links:           s.inventory,
 		},
 	}
 	return rw, nil
@@ -275,9 +276,42 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 	return f, nil
 }
 
+func (s Spork) CreateLink(file, parent *store.File, linkName string) (*store.File, error) {
+	parent.Lock()
+	defer parent.Unlock()
+
+	for _, c := range parent.Children {
+		if c.Name == linkName {
+			return nil, store.ErrFileAlreadyExists
+		}
+	}
+
+	link := s.newFile(linkName, file.Mode)
+	link.Lock()
+	defer link.Unlock()
+
+	link.RWMutex = file.RWMutex
+	link.Id = file.Id
+	link.Version = file.Version
+	link.Mode = file.Mode
+	link.Atime = file.Atime
+	link.Mtime = file.Mtime
+	link.Size = file.Size
+
+	committed, callback := s.raft.Add(link.Id, parent.Id, link.Name, link.Mode)
+	if !committed {
+		return nil, fmt.Errorf("failed to add file in raft")
+	}
+	defer callback()
+
+	s.add(link, parent)
+
+	return link, nil
+}
+
 func (s Spork) add(file *store.File, parent *store.File) {
-	s.inventory.Add(file)
 	file.Parent = parent
+	s.inventory.Add(file)
 	parent.Children = append(parent.Children, file)
 	parent.Size = int64(len(parent.Children))
 }
@@ -309,7 +343,7 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 		defer newParent.Unlock()
 	}
 
-	committed, callback := s.raft.Rename(file.Id, oldParent.Id, newParent.Id, newName)
+	committed, callback := s.raft.Rename(file.Id, oldParent.Id, newParent.Id, file.Name, newName)
 	if !committed {
 		return fmt.Errorf("couldn't vote raft change")
 	}
@@ -362,7 +396,7 @@ func (s Spork) Delete(file *store.File) error {
 		return store.ErrNoSuchFile
 	}
 
-	committed, callback := s.raft.Delete(file.Id, parent.Id)
+	committed, callback := s.raft.Delete(file.Id, parent.Id, file.Name)
 	if !committed {
 		return fmt.Errorf("couldn't vote removal in raft")
 	}
@@ -374,16 +408,9 @@ func (s Spork) Delete(file *store.File) error {
 }
 
 func (s Spork) delete(file *store.File) {
-	s.data.Remove(file.Id, file.Version)
-	s.cache.Remove(file.Id, file.Version)
-	s.inventory.Remove(file.Id)
-
-	for i, c := range file.Parent.Children {
-		if c.Id == file.Id {
-			file.Parent.Children = append(file.Parent.Children[:i], file.Parent.Children[i+1:]...)
-			file.Parent.Size--
-			break
-		}
+	if !s.inventory.Remove(file) {
+		s.data.Remove(file.Id, file.Version)
+		s.cache.Remove(file.Id, file.Version)
 	}
 }
 

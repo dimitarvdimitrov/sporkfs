@@ -36,6 +36,7 @@ func (n node) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Size = uint64(n.Size)
 	attr.Atime = n.Atime
 	attr.Mtime = n.Mtime
+	attr.Valid = time.Millisecond
 
 	return nil
 }
@@ -154,6 +155,15 @@ func (n node) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	}
 
 	return n.spork.Rename(file, n.File, newParent.File, req.NewName)
+}
+
+func (n node) Link(ctx context.Context, req *fuse.LinkRequest, old fs.Node) (fs.Node, error) {
+	f, err := n.spork.CreateLink(old.(node).File, n.File, req.NewName)
+	if err != nil {
+		return nil, parseError(err)
+	}
+
+	return newNode(f, n.spork, n.registrar), nil
 }
 
 func (n node) Remove(ctx context.Context, req *fuse.RemoveRequest) error {

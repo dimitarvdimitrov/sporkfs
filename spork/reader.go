@@ -39,6 +39,8 @@ func (r *reader) Read(p []byte) (n int, err error) {
 }
 
 func (r *reader) Close() error {
+	r.f.Lock()
 	r.f.Atime = time.Now()
+	r.f.Unlock()
 	return r.r.Close()
 }

@@ -95,12 +95,13 @@ func (w *applier) ProposeAdd(id, parentId uint64, name string, mode store.FileMo
 	return w.propose(entry)
 }
 
-func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, newName string) (bool, func()) {
+func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, oldName, newName string) (bool, func()) {
 	r := &raftpb.Rename{
 		Id:          id,
 		OldParentId: oldParentId,
 		NewParentId: newParentId,
 		NewName:     newName,
+		OldName:     oldName,
 	}
 	entry := &raftpb.Entry{
 		Message: &raftpb.Entry_Rename{Rename: r},
@@ -108,10 +109,11 @@ func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, newName str
 	return w.propose(entry)
 }
 
-func (w *applier) ProposeDelete(id, parentId uint64) (bool, func()) {
+func (w *applier) ProposeDelete(id, parentId uint64, name string) (bool, func()) {
 	d := &raftpb.Delete{
 		Id:       id,
 		ParentId: parentId,
+		Name:     name,
 	}
 	entry := &raftpb.Entry{
 		Message: &raftpb.Entry_Delete{Delete: d},

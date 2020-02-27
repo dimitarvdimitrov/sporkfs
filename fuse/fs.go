@@ -13,16 +13,17 @@ import (
 )
 
 type Fs struct {
-	S                          *spork.Spork
-	invalidFiles, deletedFiles <-chan *store.File
-	reg                        nodeRegistrar
+	S            *spork.Spork
+	invalidFiles chan *store.File
+	deletedFiles <-chan *store.File
+	reg          nodeRegistrar
 }
 
-func NewFS(s *spork.Spork, invalidations, deletions <-chan *store.File) Fs {
+func NewFS(s *spork.Spork, invalidations chan *store.File, deletions <-chan *store.File) Fs {
 	f := Fs{
 		reg: &registrar{
 			RWMutex:         &sync.RWMutex{},
-			registeredNodes: make(map[uint64]node),
+			registeredNodes: make(map[uint64][]node),
 		},
 		S:            s,
 		invalidFiles: invalidations,
@@ -51,10 +52,18 @@ func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
 
 			var p, n node
 			var pok, nok bool
+			var pid, ppid uint64
 
-			n, nok = f.reg.getNode(file.Id)
 			if file.Parent != nil {
-				p, pok = f.reg.getNode(file.Parent.Id)
+				pid = file.Parent.Id
+				if file.Parent.Parent != nil {
+					ppid = file.Parent.Parent.Id
+				}
+			}
+
+			n, nok = f.reg.getNode(file.Id, pid, file.Name)
+			if file.Parent != nil {
+				p, pok = f.reg.getNode(file.Parent.Id, ppid, file.Parent.Name)
 			}
 
 			if nok {
@@ -80,7 +89,8 @@ func (f Fs) WatchDeletions(ctx context.Context) {
 				return
 			}
 
-			f.reg.deleteNode(file.Id)
+			f.reg.deleteNode(node{File: file})
+			f.invalidFiles <- file
 			log.Debug("invalidated deleted file", log.Id(file.Id))
 		case <-ctx.Done():
 			return

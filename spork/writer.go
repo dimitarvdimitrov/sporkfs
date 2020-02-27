@@ -21,6 +21,12 @@ type remover interface {
 	Remove(id, version uint64)
 }
 
+type linkSetter interface {
+	SetVersion(id, version uint64)
+	SetSize(id uint64, size int64)
+	GetAll(id uint64) []*store.File
+}
+
 type Writer interface {
 	data.Syncer
 	io.WriterAt
@@ -39,6 +45,7 @@ type writer struct {
 	invalidate      chan<- *store.File
 	fileSizer       sizer
 	fileRemover     remover
+	links           linkSetter
 	changer         raft.Committer
 	w               data.Writer
 }
@@ -95,9 +102,15 @@ func (w *writer) Close() error {
 	defer callback()
 
 	w.fileRemover.Remove(w.f.Id, w.f.Version)
-	w.f.Version = newVersion
-	w.f.Size = size
-	w.f.Mtime, w.f.Atime = changeTime, changeTime
+
+	for _, link := range w.links.GetAll(w.f.Id) {
+		link.Mtime, link.Atime = changeTime, changeTime
+		link.Version = newVersion
+		link.Size = size
+		if link != w.f {
+			w.invalidate <- link
+		}
+	}
 
 	log.Debug("successfully closed file (including raft and invalidation)", zap.Uint64("id", w.f.Id))
 	return nil
