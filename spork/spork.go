@@ -199,17 +199,17 @@ func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver)
 	}
 	log.Debug("transferring remote file", log.Id(id), log.Ver(version))
 
-	w, err := dst.Writer(id, version, version, os.O_TRUNC)
-	if err != nil {
-		return fmt.Errorf("writing file to destination id:%d, version:%d, err:%w", id, version, err)
-	}
-	defer w.Close()
-
 	r, err := s.fetcher.Reader(id, version)
 	if err != nil {
 		return fmt.Errorf("initing fetcher for id:%d, version:%d, err:%w", id, version, err)
 	}
 	defer r.Close()
+
+	w, err := dst.Writer(id, version, version, os.O_TRUNC)
+	if err != nil {
+		return fmt.Errorf("writing file to destination id:%d, version:%d, err:%w", id, version, err)
+	}
+	defer w.Close()
 
 	_, err = io.Copy(w, r)
 	if err != nil {
@@ -224,12 +224,6 @@ func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint strin
 		return nil
 	}
 
-	w, err := dst.Writer(id, oldVersion, newVersion, os.O_WRONLY|os.O_TRUNC)
-	if err != nil {
-		return err
-	}
-	defer w.Close()
-
 	r, err := s.fetcher.ReaderFromPeer(id, newVersion, peerHint)
 	if err != nil {
 		r, err = s.fetcher.Reader(id, newVersion)
@@ -238,6 +232,12 @@ func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint strin
 		}
 	}
 	defer r.Close()
+
+	w, err := dst.Writer(id, oldVersion, newVersion, os.O_WRONLY|os.O_TRUNC)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
 
 	_, err = io.Copy(w, r)
 	if err != nil {

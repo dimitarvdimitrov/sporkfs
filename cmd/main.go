@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -56,7 +57,7 @@ func main() {
 func handleOsSignals(ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		signals := make(chan os.Signal)
-		signal.Notify(signals, os.Kill, os.Interrupt)
+		signal.Notify(signals, os.Kill, os.Interrupt, syscall.SIGTERM)
 
 		select {
 		case <-signals:
@@ -71,13 +72,15 @@ func unmountWhenDone(ctx context.Context, mountpoint string, wg *sync.WaitGroup)
 	wg.Add(1)
 	go func() {
 		<-ctx.Done()
-		for done := false; !done; time.Sleep(time.Second) {
+		for i := 0; i < 3; i++ {
 			if err := fuse.Unmount(mountpoint); err != nil {
 				log.Error("unmount", zap.Error(err))
+				time.Sleep(time.Second)
 			} else {
-				done = true
+				break
 			}
 		}
+		log.Debug("giving up mate...")
 		wg.Done()
 	}()
 }

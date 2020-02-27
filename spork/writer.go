@@ -78,6 +78,7 @@ func (w *writer) Close() error {
 	}
 
 	w.w.Close()
+	changeTime := time.Now()
 	newVersion := w.f.Version + 1
 	size := w.fileSizer.Size(w.f.Id, newVersion)
 
@@ -96,10 +97,8 @@ func (w *writer) Close() error {
 	w.fileRemover.Remove(w.f.Id, w.f.Version)
 	w.f.Version = newVersion
 	w.f.Size = size
-	now := time.Now()
-	w.f.Mtime, w.f.Atime = now, now
+	w.f.Mtime, w.f.Atime = changeTime, changeTime
 
-	w.invalidate <- w.f
 	log.Debug("successfully closed file (including raft and invalidation)", zap.Uint64("id", w.f.Id))
 	return nil
 }
