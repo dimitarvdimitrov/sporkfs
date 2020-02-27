@@ -61,7 +61,7 @@ func (n node) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.
 		if req.Valid&fuse.SetattrMtimeNow != 0 {
 			t = time.Now()
 		}
-		n.Atime = t
+		n.Mtime = t
 	}
 	n.File.Unlock()
 

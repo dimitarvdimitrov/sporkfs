@@ -349,6 +349,8 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 	}
 	defer callback()
 
+	s.invalid <- file
+	time.Sleep(time.Microsecond)
 	s.rename(file, newParent, oldParent, newName)
 
 	return nil

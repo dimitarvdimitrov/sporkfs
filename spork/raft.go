@@ -61,6 +61,7 @@ func (s Spork) watchRaft() {
 			}
 
 			s.invalid <- file
+			time.Sleep(time.Microsecond)
 			s.rename(file, newParent, oldParent, req.NewName)
 
 			file.Unlock()
