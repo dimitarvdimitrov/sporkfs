@@ -79,7 +79,11 @@ func (d *localDriver) Reader(id, version uint64, flags int) (Reader, error) {
 	location, exists := d.index[id][version]
 	d.indexM.RUnlock()
 	if !exists {
-		return nil, store.ErrNoSuchFile
+		if version == 0 {
+			location = generateStorageLocation(id, version)
+		} else {
+			return nil, store.ErrNoSuchFile
+		}
 	}
 
 	f, err := os.OpenFile(d.storageRoot+location, flags|os.O_CREATE, store.ModeRegularFile)

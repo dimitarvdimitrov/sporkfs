@@ -144,6 +144,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 			r: r,
 		},
 		w: &writer{
+			written:         flags&os.O_TRUNC != 0 || (flags&os.O_APPEND == 0 && flags&os.O_TRUNC == 0),
 			startingVersion: f.Version,
 			f:               f,
 			fileSizer:       driver,

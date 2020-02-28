@@ -41,6 +41,7 @@ type WriteCloser interface {
 type writer struct {
 	f *store.File
 
+	written         bool
 	startingVersion uint64
 	invalidate      chan<- *store.File
 	fileSizer       sizer
@@ -62,16 +63,28 @@ func (w *writer) WriteAt(p []byte, off int64) (n int, err error) {
 		return 0, store.ErrStaleHandle
 	}
 
+	defer func() {
+		if n > 0 {
+			w.written = true
+		}
+	}()
+
 	return w.w.WriteAt(p, off)
 }
 
-func (w *writer) Write(p []byte) (int, error) {
+func (w *writer) Write(p []byte) (n int, _ error) {
 	w.f.Lock()
 	defer w.f.Unlock()
 
 	if w.f.Version != w.startingVersion {
 		return 0, store.ErrStaleHandle
 	}
+
+	defer func() {
+		if n > 0 {
+			w.written = true
+		}
+	}()
 
 	return w.w.Write(p)
 }
@@ -85,6 +98,10 @@ func (w *writer) Close() error {
 	}
 
 	w.w.Close()
+	if !w.written {
+		return nil
+	}
+
 	changeTime := time.Now()
 	newVersion := w.f.Version + 1
 	size := w.fileSizer.Size(w.f.Id, newVersion)
