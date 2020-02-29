@@ -93,17 +93,21 @@ func (w *writer) Close() error {
 	w.f.Lock()
 	defer w.f.Unlock()
 	log.Debug("closing handle for file", log.Id(w.f.Id))
+
+	w.w.Close()
+	newVersion := w.f.Version + 1
+
 	if w.f.Version != w.startingVersion {
+		w.fileRemover.Remove(w.f.Id, newVersion)
 		return store.ErrStaleHandle
 	}
 
-	w.w.Close()
 	if !w.written {
+		w.fileRemover.Remove(w.f.Id, newVersion)
 		return nil
 	}
 
 	changeTime := time.Now()
-	newVersion := w.f.Version + 1
 	size := w.fileSizer.Size(w.f.Id, newVersion)
 
 	committed, callback := w.changer.Change(w.f.Id, newVersion, 0, size)

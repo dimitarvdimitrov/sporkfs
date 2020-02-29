@@ -44,6 +44,11 @@ func (f grpcFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 		return nil, err
 	}
 
+	_, err = stream.Recv() // the server will send a dummy reply first to confirm it has the file
+	if err != nil {
+		return nil, err
+	}
+
 	out, in := io.Pipe()
 	reader := grpcAsyncReader{
 		stream:      stream,

@@ -34,11 +34,17 @@ func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadSer
 	} else if server.data.Contains(req.Id, req.Version) {
 		src = server.data
 	} else {
+		log.Debug("[file server] file not known", log.Id(req.Id), log.Ver(req.Version))
 		return store.ErrNoSuchFile
 	}
 
 	reader, err := src.Reader(req.Id, req.Version, os.O_RDONLY)
 	if err != nil {
+		return err
+	}
+
+	// send an empty reply to confirm we have the file
+	if err = stream.Send(&proto.ReadReply{}); err != nil {
 		return err
 	}
 

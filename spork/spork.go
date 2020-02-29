@@ -215,6 +215,7 @@ func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver)
 
 	_, err = io.Copy(w, r)
 	if err != nil {
+		dst.Remove(id, version) // remove so that we can retry next time
 		return fmt.Errorf("error during stream transfer of id:%d, version:%d, err:%w", id, version, err)
 	}
 	return nil
