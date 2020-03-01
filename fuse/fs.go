@@ -49,36 +49,42 @@ func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
 			if !ok {
 				return
 			}
-
-			var p, n node
-			var pok, nok bool
 			var pid, ppid uint64
-
-			if file.Parent != nil {
-				pid = file.Parent.Id
-				if file.Parent.Parent != nil {
-					ppid = file.Parent.Parent.Id
+			var pname string
+			if parent := file.Parent; parent != nil {
+				pid = parent.Id
+				pname = parent.Name
+				if pparent := parent.Parent; pparent != nil {
+					ppid = pparent.Id
 				}
 			}
-
-			n, nok = f.reg.getNode(file.Id, pid, file.Name)
-			if file.Parent != nil {
-				p, pok = f.reg.getNode(file.Parent.Id, ppid, file.Parent.Name)
-			}
-
-			if nok {
-				_ = server.InvalidateNodeAttr(n)
-				_ = server.InvalidateNodeData(n)
-			}
-			if pok {
-				_ = server.InvalidateEntry(p, file.Name)
-				_ = server.InvalidateNodeData(p)
-			}
-			log.Debug("invalidated file and its parent entry", log.Id(file.Id), log.Ver(file.Version), log.Name(file.Name))
+			// in a goroutine because https://github.com/bazil/fuse/issues/220
+			go invalidateFile(file.Id, pid, ppid, file.Name, pname, f.reg, server)
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func invalidateFile(fid, pid, ppid uint64, name, pname string, reg nodeRegistrar, server *fs.Server) {
+	log.Debug("[vfs] starting to invalidate", log.Id(fid))
+	var p, n node
+	var pok, nok bool
+
+	n, nok = reg.getNode(fid, pid, name)
+	p, pok = reg.getNode(pid, ppid, pname)
+
+	if nok {
+		log.Debug("[vfs] invalidating node")
+		_ = server.InvalidateNodeAttr(n)
+		_ = server.InvalidateNodeData(n)
+	}
+	if pok {
+		log.Debug("[vfs] invalidating parent")
+		_ = server.InvalidateEntry(p, name)
+		_ = server.InvalidateNodeData(p)
+	}
+	log.Debug("[vfs] invalidated file and its parent entry", log.Id(fid), log.Name(name))
 }
 
 func (f Fs) WatchDeletions(ctx context.Context) {
@@ -91,7 +97,7 @@ func (f Fs) WatchDeletions(ctx context.Context) {
 
 			f.reg.deleteNode(node{File: file})
 			f.invalidFiles <- file
-			log.Debug("invalidated deleted file", log.Id(file.Id))
+			log.Debug("[vfs] invalidated deleted file", log.Id(file.Id))
 		case <-ctx.Done():
 			return
 		}

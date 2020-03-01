@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -102,6 +103,7 @@ func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr 
 	wg.Add(1)
 	go func() {
 		<-ctx.Done()
+		time.AfterFunc(time.Second*10, grpcServer.Stop) // just nuke it if it doesn't give up
 		grpcServer.GracefulStop()
 		wg.Done()
 	}()
@@ -133,7 +135,9 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 		return nil, err
 	}
 
-	r, w, err := driver.Open(f.Id, f.Version, f.Version+1, flags)
+	nextVersion := rand.Uint64()
+
+	r, w, err := driver.Open(f.Id, f.Version, nextVersion, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +150,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 		w: &writer{
 			written:         flags&os.O_TRUNC != 0 || (flags&os.O_APPEND == 0 && flags&os.O_TRUNC == 0),
 			startingVersion: f.Version,
+			endingVersion:   nextVersion,
 			f:               f,
 			fileSizer:       driver,
 			fileRemover:     driver,
@@ -211,7 +216,7 @@ func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver)
 	if err != nil {
 		return fmt.Errorf("writing file to destination id:%d, version:%d, err:%w", id, version, err)
 	}
-	defer w.Close()
+	defer w.Commit()
 
 	_, err = io.Copy(w, r)
 	if err != nil {
@@ -224,6 +229,11 @@ func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver)
 func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint string, dst storedata.Driver) error {
 	log.Debug("transferring remote file", log.Id(id), log.Ver(newVersion), zap.Uint64("old_version", oldVersion))
 	if dst.Contains(id, newVersion) {
+		log.Debug("[spork] skipping transfer since file is already here",
+			log.Id(id),
+			log.Ver(newVersion),
+			zap.String("peer", peerHint),
+		)
 		return nil
 	}
 
@@ -240,7 +250,7 @@ func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint strin
 	if err != nil {
 		return err
 	}
-	defer w.Close()
+	defer w.Commit()
 
 	_, err = io.Copy(w, r)
 	if err != nil {
@@ -363,7 +373,7 @@ func (s Spork) rename(file *store.File, newParent *store.File, oldParent *store.
 
 	if oldParent.Id != newParent.Id {
 		for i, c := range oldParent.Children {
-			if c.Id == file.Id {
+			if c.Id == file.Id && c.Name == file.Name {
 				oldParent.Children = append(oldParent.Children[:i], oldParent.Children[i+1:]...)
 				oldParent.Size--
 				break

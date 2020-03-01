@@ -41,14 +41,14 @@ type WriteCloser interface {
 type writer struct {
 	f *store.File
 
-	written         bool
-	startingVersion uint64
-	invalidate      chan<- *store.File
-	fileSizer       sizer
-	fileRemover     remover
-	links           linkSetter
-	changer         raft.Committer
-	w               data.Writer
+	written                        bool
+	startingVersion, endingVersion uint64
+	invalidate                     chan<- *store.File
+	fileSizer                      sizer
+	fileRemover                    remover
+	links                          linkSetter
+	changer                        raft.Committer
+	w                              data.Writer
 }
 
 func (w *writer) Sync() {
@@ -94,25 +94,29 @@ func (w *writer) Close() error {
 	defer w.f.Unlock()
 	log.Debug("closing handle for file", log.Id(w.f.Id))
 
-	w.w.Close()
-	newVersion := w.f.Version + 1
-
 	if w.f.Version != w.startingVersion {
-		w.fileRemover.Remove(w.f.Id, newVersion)
+		w.w.Cancel()
 		return store.ErrStaleHandle
 	}
 
 	if !w.written {
-		w.fileRemover.Remove(w.f.Id, newVersion)
+		w.w.Cancel()
 		return nil
 	}
 
+	w.w.Commit()
 	changeTime := time.Now()
+	newVersion := w.endingVersion
 	size := w.fileSizer.Size(w.f.Id, newVersion)
 
 	committed, callback := w.changer.Change(w.f.Id, newVersion, 0, size)
 	if !committed {
-		w.fileRemover.Remove(w.f.Id, newVersion)
+		// we don't delete the version because this non-commitment might have been
+		// caused by a timing out in spork's raft loop;
+		// if there is another entry that changes the same file, say with index i
+		// and our entry got index i+1, the spork raft loop will block on the
+		// lock of this file; until we time out; then our entry will be queued for regular execution
+		// and the file with the new version will be needed
 		log.Error("voting change in raft failed",
 			log.Id(w.f.Id),
 			zap.Uint64("old_version", w.f.Version),

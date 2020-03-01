@@ -3,6 +3,7 @@ package raft
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -238,6 +239,12 @@ func (s *node) maybeCreateSnapshot() {
 }
 
 func (s *node) process(e etcdraftpb.Entry) {
+	// we need to make sure we are applying the entries in the correct order,
+	// we we wait for the previous entry to finish being applied
+	s.entryTracker.pause()
+	s.entryTracker.wait()
+	s.entryTracker.resume()
+
 	switch e.Type {
 	case etcdraftpb.EntryConfChange:
 		var cc etcdraftpb.ConfChange
@@ -245,12 +252,12 @@ func (s *node) process(e etcdraftpb.Entry) {
 		s.raft.ApplyConfChange(cc)
 
 	case etcdraftpb.EntryNormal:
-		log.Debug("[node] processing normal raft entry", zap.Uint64("index", e.Index))
 		msg := &raftpb.Entry{}
 		if err := proto.Unmarshal(e.Data, msg); err != nil {
 			log.Error("couldn't decode entry", zap.ByteString("entry", e.Data))
 			break
 		}
+		log.Debug("[node] processing normal raft entry", zap.Uint64("index", e.Index), zap.String("type", fmt.Sprintf("%T", msg.Message)))
 
 		callback := s.entryTracker.watch(e.Index)
 		s.commitC <- UnactionedMessage{

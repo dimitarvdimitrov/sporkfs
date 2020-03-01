@@ -63,7 +63,7 @@ func toDirEnts(files []*store.File) []fuse.Dirent {
 	for i, f := range files {
 		typ := fuse.DT_File
 
-		if f.Mode == store.ModeDirectory {
+		if f.Mode.IsDir() {
 			typ = fuse.DT_Dir
 		}
 

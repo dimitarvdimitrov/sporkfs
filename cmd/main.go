@@ -80,6 +80,7 @@ func unmountWhenDone(ctx context.Context, mountpoint string, wg *sync.WaitGroup)
 				done = true
 			}
 		}
+		log.Info("unmounted vfs")
 		wg.Done()
 	}()
 }
@@ -105,6 +106,7 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 		if err := fuseServer.Serve(vfs); err != nil {
 			log.Error("serve", zap.Error(err))
 		}
+		log.Info("stopped fuse")
 		wg.Done()
 		cancel()
 	}()

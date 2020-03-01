@@ -143,7 +143,7 @@ func (w *applier) propose(entry *raftpb.Entry) (bool, func()) {
 		w.l.Unlock()
 	}()
 
-	timeout := time.NewTimer(time.Second * 2).C
+	timeout := time.NewTimer(time.Second).C
 
 	select {
 	case <-w.done:

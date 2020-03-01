@@ -5,6 +5,9 @@ BIN_DIR:=bin/sporkfs
 MAIN:=cmd/main.go
 GOFLAGS:=$(GOFLAGS) CGO_ENABLED=1
 
+prod-build:
+	CGO_ENABLED=0 go build -ldflags='-w -f' -o $(BIN_DIR) $(MAIN)
+
 build:
 	$(GOFLAGS) go build -race -o $(BIN_DIR) $(MAIN)
 

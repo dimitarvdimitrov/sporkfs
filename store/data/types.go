@@ -29,16 +29,13 @@ type Reader interface {
 }
 
 type Writer interface {
-	Closer
 	Syncer
 	io.WriterAt
 	io.Writer
+	Commit()
+	Cancel()
 }
 
 type Syncer interface {
 	Sync()
-}
-
-type Closer interface {
-	Close()
 }

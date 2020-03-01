@@ -16,7 +16,7 @@ func (s Spork) watchRaft() {
 		switch msg := entry.Message.(type) {
 		case *raftpb.Entry_Add:
 			req := msg.Add
-			log.Debug("processing add raft entry", log.Id(req.Id), log.Name(req.Name))
+			log.Debug("[spork] processing add raft entry", log.Id(req.Id), log.Name(req.Name))
 			parent, err := s.inventory.GetAny(req.ParentId)
 			if err != nil {
 				log.Error("add raft entry unsuccessful", zap.Error(err))
@@ -24,6 +24,7 @@ func (s Spork) watchRaft() {
 			}
 			parent.Lock()
 
+			// if it's a link we copy everything we know about the file
 			file := s.newFile(req.Name, store.FileMode(req.Mode))
 			file.Id = req.Id
 			if existingFile, err := s.inventory.GetAny(file.Id); err == nil {
@@ -33,6 +34,20 @@ func (s Spork) watchRaft() {
 				file.Atime = existingFile.Atime
 				file.Mtime = existingFile.Mtime
 			}
+
+			// we also need to make sure there isn't the same file locally in case this
+			// is a race condition between changes from different nodes
+			for i, c := range parent.Children {
+				if c.Name == file.Name {
+					parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
+					parent.Size--
+					s.delete(c)
+					s.deleted <- c
+					log.Debug("[spork] cleaned up remnant file")
+					break
+				}
+			}
+
 			file.Lock()
 			s.add(file, parent)
 			s.invalid <- parent
@@ -41,7 +56,7 @@ func (s Spork) watchRaft() {
 			file.Unlock()
 		case *raftpb.Entry_Rename:
 			req := msg.Rename
-			log.Debug("processing rename raft entry", log.Id(req.Id), zap.String("new_name", req.NewName))
+			log.Debug("[spork] processing rename raft entry", log.Id(req.Id), zap.String("new_name", req.NewName))
 
 			file, err := s.inventory.GetSpecific(req.Id, req.OldParentId, req.OldName)
 			if err != nil {
@@ -71,11 +86,11 @@ func (s Spork) watchRaft() {
 			}
 		case *raftpb.Entry_Delete:
 			req := msg.Delete
-			log.Debug("processing delete raft entry", log.Id(req.Id))
+			log.Debug("[spork] processing delete raft entry", log.Id(req.Id))
 
 			file, err := s.inventory.GetSpecific(req.Id, req.ParentId, req.Name)
 			if err != nil {
-				log.Error("delete file for raft (file)", zap.Error(err))
+				log.Error("[spork] delete file for raft", zap.Error(err))
 				break
 			}
 			file.Lock()
@@ -86,7 +101,7 @@ func (s Spork) watchRaft() {
 			file.Parent.Unlock()
 		case *raftpb.Entry_Change:
 			req := msg.Change
-			log.Debug("processing change raft entry", log.Id(req.Id), log.Ver(req.Version))
+			log.Debug("[spork] processing change raft entry", log.Id(req.Id), log.Ver(req.Version), zap.Uint64("from", req.PeerId))
 
 			file, err := s.inventory.GetAny(req.Id)
 			if err != nil {
@@ -110,7 +125,7 @@ func (s Spork) watchRaft() {
 				}
 
 				if err := s.updateLocalFile(req.Id, oldVersion, req.Version, peer, dest); err != nil {
-					log.Error("transferring changed file from raft", zap.Error(err))
+					log.Error("[spork] transferring changed file from raft", zap.Error(err))
 				} else {
 					if oldVersion != req.Version {
 						dest.Remove(file.Id, oldVersion)
@@ -124,6 +139,6 @@ func (s Spork) watchRaft() {
 			file.Unlock()
 		}
 		entry.Action()
-		log.Debug("finished processing raft entry")
+		log.Debug("[spork] finished processing raft entry")
 	}
 }

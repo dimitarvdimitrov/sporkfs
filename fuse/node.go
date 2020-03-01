@@ -127,6 +127,7 @@ func (n node) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	}
 	h := newHandle(node, reader, writer)
 	resp.Handle = h.id
+	resp.EntryValid = time.Millisecond
 
 	return node, h, err
 }

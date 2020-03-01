@@ -13,7 +13,7 @@ const maxId = math.MaxUint64
 type Peers struct {
 	redundancy int
 	p          []string
-	thisPeer   int
+	thisPeer   int // without raft offset (i.e. if this peer is first, then thisPeer == 0)
 	idxPerPeer uint64
 }
 
@@ -116,4 +116,8 @@ func (p Peers) GetPeerRaft(id uint64) string {
 // thisPeerRaftId returns the raft id for this peer
 func (p Peers) thisPeerRaftId() uint64 {
 	return uint64(p.thisPeer + 1)
+}
+
+func (p Peers) ThisPeer() string {
+	return p.p[p.thisPeer]
 }

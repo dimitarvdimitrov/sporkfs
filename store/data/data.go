@@ -198,10 +198,15 @@ func (d *localDriver) newSegWriter(id, oldVersion, newVersion uint64, file *os.F
 		d.index[id][newVersion] = newLocation
 	}
 
+	onCancel := func() {
+		_ = file.Close()
+	}
+
 	return &segmentedWriter{
-		f:       file,
-		sync:    syncer(file),
-		onClose: onClose,
+		f:        file,
+		sync:     syncer(file),
+		onCommit: onClose,
+		onCancel: onCancel,
 	}
 }
 

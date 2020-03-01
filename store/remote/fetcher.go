@@ -2,7 +2,9 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/api"
 	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
@@ -39,9 +41,23 @@ func (f grpcFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 		Version: version,
 	}
 
-	stream, err := f.client.Read(ctx, req, grpc.WaitForReady(true))
-	if err != nil {
-		return nil, err
+	var stream proto.File_ReadClient
+	var err error
+
+	connected := make(chan struct{})
+	go func() {
+		stream, err = f.client.Read(ctx, req, grpc.WaitForReady(true))
+		close(connected)
+	}()
+
+	// we need to enforce the initial connection timeout ourselves because we cant set
+	// a timeout on that only without limiting the time for the actual file transfer as well
+	connTimeout := time.NewTimer(time.Second / 2).C
+	select {
+	case <-connTimeout:
+		cancel()
+		return nil, fmt.Errorf("couldn't connect to peer")
+	case <-connected:
 	}
 
 	_, err = stream.Recv() // the server will send a dummy reply first to confirm it has the file
