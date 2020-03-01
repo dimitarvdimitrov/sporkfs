@@ -143,7 +143,9 @@ func (w *applier) propose(entry *raftpb.Entry) (bool, func()) {
 		w.l.Unlock()
 	}()
 
-	timeout := time.NewTimer(time.Second).C
+	// an election timeout should be enough to hear back for the entry
+	// about 10 messages would have been exchanged between us and the leader
+	timeout := time.NewTimer(electionTimeout).C
 
 	select {
 	case <-w.done:

@@ -149,7 +149,6 @@ func (s *node) saveToStorage(state etcdraftpb.HardState, entries []etcdraftpb.En
 		}
 	}
 
-	// TODO uncomment
 	//if !raft.IsEmptySnap(snapshot) {
 	//	if err := s.storage.SaveSnapshot(snapshot); err != nil {
 	//		log.Error("saving hard state", zap.Error(err))
@@ -218,8 +217,6 @@ func (s *node) maybeCreateSnapshot() {
 		return
 	}
 
-	s.entryTracker.pause()
-	defer s.entryTracker.resume()
 	s.entryTracker.wait()
 
 	buff := &bytes.Buffer{}
@@ -241,9 +238,7 @@ func (s *node) maybeCreateSnapshot() {
 func (s *node) process(e etcdraftpb.Entry) {
 	// we need to make sure we are applying the entries in the correct order,
 	// we we wait for the previous entry to finish being applied
-	s.entryTracker.pause()
 	s.entryTracker.wait()
-	s.entryTracker.resume()
 
 	switch e.Type {
 	case etcdraftpb.EntryConfChange:
