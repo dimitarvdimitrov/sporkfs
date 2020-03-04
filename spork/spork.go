@@ -103,7 +103,7 @@ func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr 
 	wg.Add(1)
 	go func() {
 		<-ctx.Done()
-		time.AfterFunc(time.Second*10, grpcServer.Stop) // just nuke it if it doesn't give up
+		time.AfterFunc(time.Second*10, grpcServer.Stop) // just nuke it if it doesn't give in 10 sec
 		grpcServer.GracefulStop()
 		wg.Done()
 	}()
@@ -291,6 +291,8 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 func (s Spork) CreateLink(file, parent *store.File, linkName string) (*store.File, error) {
 	parent.Lock()
 	defer parent.Unlock()
+	file.Lock()
+	defer file.Unlock()
 
 	for _, c := range parent.Children {
 		if c.Name == linkName {
@@ -299,8 +301,6 @@ func (s Spork) CreateLink(file, parent *store.File, linkName string) (*store.Fil
 	}
 
 	link := s.newFile(linkName, file.Mode)
-	link.Lock()
-	defer link.Unlock()
 
 	link.RWMutex = file.RWMutex
 	link.Id = file.Id
@@ -321,6 +321,7 @@ func (s Spork) CreateLink(file, parent *store.File, linkName string) (*store.Fil
 	return link, nil
 }
 
+// add will set the Parent field of the file, add it to the inventory, and to the children of the parent
 func (s Spork) add(file *store.File, parent *store.File) {
 	file.Parent = parent
 	s.inventory.Add(file)
@@ -361,8 +362,10 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 	}
 	defer callback()
 
-	s.invalid <- file
-	time.Sleep(time.Microsecond)
+	// we copy the file so that the rename below doesn't affect what the invalidator reads
+	oldFile := *file
+	s.invalid <- &oldFile
+
 	s.rename(file, newParent, oldParent, newName)
 
 	return nil

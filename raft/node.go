@@ -46,8 +46,8 @@ func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*
 
 	config := &raft.Config{
 		ID:              uint64(peers.thisPeer) + 1,
-		ElectionTick:    int(electionTimeout/heartbeatPeriod) * 5,
-		HeartbeatTick:   5,
+		ElectionTick:    int(electionTimeout / heartbeatPeriod),
+		HeartbeatTick:   1,
 		Applied:         0, // why bother with replaying since raft can do it for us?
 		Storage:         s,
 		MaxInflightMsgs: 256,
@@ -75,26 +75,37 @@ func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*
 		storage:      s,
 		clients:      clients,
 		peers:        peers,
-		t:            time.NewTicker(bcastTime),
+		t:            time.NewTicker(heartbeatPeriod),
 		commitC:      commitC,
 		proposeC:     proposeC,
 		entryTracker: newInFlight(),
 		done:         make(chan struct{}),
 		wg:           &sync.WaitGroup{},
 	}
-	node.wg.Add(2)
+	node.wg.Add(3)
 	go node.runRaft()
+	go node.tickRaft()
 	go node.serveProposals()
 
 	return node, commitC, proposeC
+}
+
+func (s *node) tickRaft() {
+	defer s.wg.Done()
+	for {
+		select {
+		case <-s.t.C:
+			s.raft.Tick()
+		case <-s.done:
+			return
+		}
+	}
 }
 
 func (s *node) runRaft() {
 	defer s.wg.Done()
 	for {
 		select {
-		case <-s.t.C:
-			s.raft.Tick()
 		case rd := <-s.raft.Ready():
 			s.saveToStorage(rd.HardState, rd.Entries, rd.Snapshot)
 			s.send(rd.Messages)
@@ -127,7 +138,8 @@ func (s *node) serveProposals() {
 				break
 			}
 
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
+			// this is a local action, so shouldn't take long, but still short circuit if raft got stuck
+			ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*10)
 			err = s.raft.Propose(ctx, data)
 			if err != nil {
 				log.Error("error proposing in raft", zap.Error(err))

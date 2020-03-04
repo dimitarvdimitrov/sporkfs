@@ -34,6 +34,7 @@ func (s Spork) watchRaft() {
 				file.Atime = existingFile.Atime
 				file.Mtime = existingFile.Mtime
 			}
+			file.Lock()
 
 			// we also need to make sure there isn't the same file locally in case this
 			// is a race condition between changes from different nodes
@@ -43,12 +44,11 @@ func (s Spork) watchRaft() {
 					parent.Size--
 					s.delete(c)
 					s.deleted <- c
-					log.Debug("[spork] cleaned up remnant file")
+					log.Debug("[spork] replacing file with same name")
 					break
 				}
 			}
 
-			file.Lock()
 			s.add(file, parent)
 			s.invalid <- parent
 
@@ -75,8 +75,10 @@ func (s Spork) watchRaft() {
 				newParent.Lock()
 			}
 
-			s.invalid <- file
-			time.Sleep(time.Microsecond)
+			// we copy the file so that the rename below doesn't affect what the invalidator reads
+			oldFile := *file
+			s.invalid <- &oldFile
+
 			s.rename(file, newParent, oldParent, req.NewName)
 
 			file.Unlock()
