@@ -1,0 +1,7 @@
+mount_point = "/mnt/sporkfs"
+data_dir = "/opt/spork/storage"
+redundancy = 3
+all_peers = [{%- for host in vars['play_hosts'] -%}
+"{{ host }}:75"{% if not loop.last %}, {% endif %}
+{% endfor %}]
+this_peer = "{{inventory_hostname}}:75"

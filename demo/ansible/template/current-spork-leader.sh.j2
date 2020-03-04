@@ -1,0 +1,8 @@
+#!/bin/bash
+
+leader=`journalctl -u spork | grep '[1-9] elected leader [1-9] at term' -o | grep 'leader [1-9]' -o | grep '[1-9]' -o | tail -1`
+
+nodes=({%- for host in vars['play_hosts'] -%}{{ host }}{% if not loop.last %} {% endif %}{% endfor -%})
+leader_ip=$(echo ${nodes[@]} | tr ' ' '\n' | sort | head -$leader | tail -1)
+
+echo leader: $leader_ip

@@ -1,0 +1,15 @@
+---
+- hosts: all
+  remote_user: root
+
+  tasks:
+    - name: stop spork
+      service:
+        name: spork
+        state: stopped
+
+    - name: delete spork data directory
+      file:
+        path: /opt/spork/storage
+        state: absent
+        mode: '0755'

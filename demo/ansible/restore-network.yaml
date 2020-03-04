@@ -1,0 +1,8 @@
+---
+- hosts: all
+  remote_user: root
+
+  tasks:
+    - name: remove distribances
+      command: tc qdisc del dev eth0 root
+      ignore_errors: yes

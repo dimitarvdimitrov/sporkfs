@@ -1,0 +1,78 @@
+---
+- hosts: all
+  remote_user: root
+
+  tasks:
+    - name: install tree
+      apt:
+        name: tree
+        state: present
+
+    - name: copy current leader script
+      template:
+        src: template/current-spork-leader.sh.j2
+        dest: /usr/bin/current-spork-leader.sh
+        mode: u=rwx
+
+    - name: copy watch scripts
+      copy:
+        src: files/{{ item }}
+        dest: /usr/bin/{{ item }}
+        mode: u=rwx
+      with_items:
+        - watch-tree.sh
+        - watch-my-file.sh
+
+    - name: configure journald
+      copy:
+        src: files/journald.conf
+        dest: /etc/systemd/journald.conf
+      register: journald_conf
+
+    - name: restart journald
+      service:
+        name: systemd-journald
+        state: restarted
+      when: journald_conf.changed
+
+    - name: create spork directory if it does not exist
+      file:
+        path: /opt/spork
+        state: directory
+        mode: '0755'
+
+    - name: create spork data directory if it does not exist
+      file:
+        path: /opt/spork/storage
+        state: directory
+        mode: '0755'
+
+    - name: create spork mount directory if it does not exist
+      file:
+        path: /mnt/sporkfs
+        state: directory
+        mode: '0755'
+      ignore_errors: yes
+
+    - name: copy spork binary
+      copy:
+        src: ../../bin/sporkfs
+        dest: /opt/spork/sporkfs
+        mode: '0555'
+
+    - name: write the spork config file
+      template:
+        src: template/config.toml.j2
+        dest: /opt/spork/config.toml
+
+    - name: copy spork drop-in unit
+      copy:
+        src: files/service.conf
+        dest: /etc/systemd/system/spork.service
+
+    - name: restart spork
+      service:
+        enabled: yes
+        daemon_reload: yes
+        name: spork
+        state: restarted
