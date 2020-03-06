@@ -4,7 +4,7 @@
 
   tasks:
     - name: introduce packet reordering
-      command: "tc qdisc add dev eth0 root handle 1: netem delay 20ms reorder 10% 50%"
+      command: "tc qdisc add dev eth0 root handle 1: netem delay 20ms reorder 30% 50%"
 
     - name: introduce packet loss
-      command: "tc qdisc add dev eth0 parent 1:1 handle 10: netem loss 5% 25%"
+      command: "tc qdisc add dev eth0 parent 1:1 handle 10: netem loss 20% 25%"
