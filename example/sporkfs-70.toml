@@ -1,0 +1,5 @@
+mount_point = "/mnt/sporkfs-70"
+data_dir = "/opt/spork/storage-70"
+redundancy = 2
+all_peers = ["localhost:71", "localhost:70"]
+this_peer = "localhost:70"
