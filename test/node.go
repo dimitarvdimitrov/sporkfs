@@ -62,6 +62,7 @@ func (n *Node) setupCmd() {
 	cmd := exec.Command(n.binaryLocation, n.cfgFile)
 	cmd.Stdout = n.stdout
 	cmd.Stderr = n.stdout
+	n.cmd = cmd
 	n.ready = make(chan struct{})
 }
 

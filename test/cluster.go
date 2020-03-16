@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 )
 
-const basePort = 70
+const basePort = 7340
 
 type Cluster struct {
 	checkTimeout time.Duration
@@ -97,15 +98,28 @@ func (c *Cluster) Start() error {
 	return nil
 }
 
-func (c *Cluster) Destroy() (err error) {
-	for i := range c.nodes {
-		if e := c.nodes[i].Destroy(); e != nil {
-			err = e
-		}
+func (c *Cluster) Destroy() error {
+	var (
+		err  error
+		errM sync.Mutex
+		wg   sync.WaitGroup
+	)
 
-		_ = c.logFiles[i].Close()
+	for i := range c.nodes {
+		i := i
+		wg.Add(1)
+		go func() {
+			if e := c.nodes[i].Destroy(); e != nil {
+				errM.Lock()
+				err = e
+				errM.Unlock()
+			}
+			_ = c.logFiles[i].Close()
+			wg.Done()
+		}()
 	}
-	return
+	wg.Wait()
+	return err
 }
 
 func (c *Cluster) WaitReady(duration time.Duration) error {
