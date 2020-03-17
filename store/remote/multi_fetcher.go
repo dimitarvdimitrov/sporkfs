@@ -3,6 +3,7 @@ package remote
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 )
@@ -42,14 +43,50 @@ func (f multiFetcher) Reader(id, version uint64) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("couldn't find suitable peer for file %d-%d", id, version)
 	}
 
-	var prevErr error
+	var wg sync.WaitGroup
+	readers := make(chan io.ReadCloser)
+	readerFound := make(chan struct{})
+	semaphore := make(chan struct{}, 3) // try at most 3 peers at a time
+
 	for _, p := range peersWithFile {
-		r, err := f.fetchers[p].Reader(id, version)
-		if err != nil {
-			prevErr = err
-			continue
-		}
-		return r, nil
+		p := p
+		wg.Add(1)
+		go func() {
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			defer wg.Done()
+
+			select {
+			case <-readerFound:
+				return
+			default:
+			}
+
+			r, err := f.fetchers[p].Reader(id, version)
+			if err != nil {
+				return
+			}
+
+			select {
+			case readers <- r:
+			default:
+				_ = r.Close()
+			}
+		}()
 	}
-	return nil, prevErr
+
+	wgDone := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(wgDone)
+	}()
+
+	select {
+	case r := <-readers:
+		close(readerFound)
+		return r, nil
+	case <-wgDone:
+		return nil, fmt.Errorf("couldn't connect to any peer with file")
+	}
 }
