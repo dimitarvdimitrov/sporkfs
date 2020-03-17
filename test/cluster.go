@@ -3,9 +3,14 @@ package test
 import (
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/dimitarvdimitrov/sporkfs/log"
 
 	"github.com/dimitarvdimitrov/sporkfs/raft"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
@@ -43,9 +48,11 @@ func NewCluster(checkTimeout time.Duration, binaryLocation string, redundancy, n
 }
 
 func createLogFiles(configs []spork.Config) (files []*os.File, err error) {
+	now := time.Now().Format("15:04:05")
 	files = make([]*os.File, len(configs))
+
 	for i, cfg := range configs {
-		files[i], err = os.Create(cfg.ThisPeer + ".log")
+		files[i], err = os.Create(fmt.Sprintf("./log/%s.%s.log", now, cfg.ThisPeer))
 		if err != nil {
 			return
 		}
@@ -98,6 +105,14 @@ func (c *Cluster) Start() error {
 	return nil
 }
 
+func (c *Cluster) StopNode(node int) error {
+	return c.nodes[node].Stop()
+}
+
+func (c *Cluster) StartNode(node int) error {
+	return c.nodes[node].Start()
+}
+
 func (c *Cluster) Destroy() error {
 	var (
 		err  error
@@ -126,8 +141,18 @@ func (c *Cluster) WaitReady(duration time.Duration) error {
 	ready := make(chan struct{})
 
 	go func() {
-		for _, n := range c.nodes {
-			n.WaitReady()
+		for allReady := false; !allReady; time.Sleep(time.Millisecond) {
+			allReady = true
+			for _, n := range c.nodes {
+				if n.Stopped() {
+					continue
+				}
+				select {
+				case <-n.Ready():
+				default:
+					allReady = false
+				}
+			}
 		}
 		close(ready)
 	}()
@@ -141,50 +166,81 @@ func (c *Cluster) WaitReady(duration time.Duration) error {
 	}
 }
 
+// TODO make those checkers (FileContains et.al) include all nodes even stopped ones, so that it's easier to debug which node
+// 	actually breaks. Now the indexes reported by the nodeDiff aren't absolute, just relative to the number of live nodes.
+
 // FileContains checks if all the nodes in the cluster have the same contents for a file. If
 // the files aren't consistent with what is expected within the checkTimout, an error is returned.
-func (c *Cluster) FileContains(fileName string, contents []byte) error {
-	checkers := make([]func() bool, len(c.nodes))
-	for i, n := range c.nodes {
-		checkers[i] = func() bool { return n.FileContains(fileName, contents) }
+func (c *Cluster) FileContains(fileName string, contents []byte) Diff {
+	checkers := make([]func() Diff, 0, len(c.nodes))
+	for _, n := range c.nodes {
+		n := n
+		if n.Stopped() {
+			continue
+		}
+		checkers = append(checkers, func() Diff { return n.FileDiff(fileName, contents) })
 	}
 	return c.checkConsistent(checkers)
 }
 
-func (c *Cluster) FileExists(fileName string) error {
-	checkers := make([]func() bool, len(c.nodes))
-	for i, n := range c.nodes {
-		checkers[i] = func() bool { return n.FileExists(fileName) }
+func (c *Cluster) FileExists(fileName string) Diff {
+	checkers := make([]func() Diff, 0, len(c.nodes))
+	for _, n := range c.nodes {
+		n := n
+		if n.Stopped() {
+			continue
+		}
+		checkers = append(checkers, func() Diff { return n.FileExists(fileName) })
 	}
 	return c.checkConsistent(checkers)
 }
 
-func (c *Cluster) FileDoesntExist(fileName string) error {
-	checkers := make([]func() bool, len(c.nodes))
-	for i, n := range c.nodes {
-		checkers[i] = func() bool { return !n.FileExists(fileName) }
+func (c *Cluster) FileDoesntExist(fileName string) Diff {
+	checkers := make([]func() Diff, 0, len(c.nodes))
+	for _, n := range c.nodes {
+		n := n
+		if n.Stopped() {
+			continue
+		}
+		checkers = append(checkers, func() Diff { return n.FileDoesntExist(fileName) })
 	}
 	return c.checkConsistent(checkers)
 }
 
-// checkConsistent checks if the provided checkers all return true (the length of the checkers needs to be
-// equal to the number of nodes). It returns when the checkers are all true or checkTimeout is reached.
-func (c *Cluster) checkConsistent(checkers []func() bool) error {
+// checkConsistent checks if the provided checkers all return true.
+// It returns when the checkers are all true or checkTimeout is reached.
+func (c *Cluster) checkConsistent(checkers []func() Diff) Diff {
 	allConsistent := make(chan struct{})
 	done := make(chan struct{})
+	checkId := rand.Int()
+	var finalDiff Diff
+	var finalDiffM sync.Mutex
 
 	go func() {
-		for allChecked := false; !allChecked; time.Sleep(time.Millisecond * 10) {
+		for haveDiffs := true; haveDiffs; time.Sleep(time.Millisecond * 10) {
 			select {
 			case <-done:
 				return
 			default:
 			}
 
-			allChecked = true
+			diff := nodeDiff{[]Diff{}}
+			haveDiffs = false
+			log.Debug("doing a check", zap.Int("check_id", checkId))
 			for _, check := range checkers {
-				allChecked = allChecked && check()
+				log.Debug("starting to perform a check", zap.Int("check_id", checkId))
+				newDiff := check()
+				log.Debug("performed a check", zap.Int("check_id", checkId))
+				if newDiff.HasDiff() {
+					log.Debug("new diff has diffs", zap.Int("check_id", checkId))
+					haveDiffs = true
+				}
+				diff.nodes = append(diff.nodes, newDiff)
 			}
+			finalDiffM.Lock()
+			finalDiff = diff
+			finalDiffM.Unlock()
+			log.Debug("finished a check", zap.Int("check_id", checkId))
 		}
 		close(allConsistent)
 	}()
@@ -192,10 +248,19 @@ func (c *Cluster) checkConsistent(checkers []func() bool) error {
 	timeout := time.NewTimer(c.checkTimeout).C
 	select {
 	case <-timeout:
+		log.Debug("timing out on a check", zap.Int("check_id", checkId))
 		close(done)
-		return fmt.Errorf("files were not eventually consistent")
+
+		finalDiffM.Lock()
+		defer finalDiffM.Unlock()
+
+		if finalDiff == nil {
+			return timeoutDiff{}
+		}
+		return finalDiff
 	case <-allConsistent:
-		return nil
+		log.Debug("everything consistent", zap.Int("check_id", checkId))
+		return finalDiff
 	}
 }
 

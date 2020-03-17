@@ -1,24 +1,26 @@
 package test
 
 import (
-	"bytes"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/dimitarvdimitrov/sporkfs/spork"
 )
 
+const activityTimeout = time.Second * 2
+
 type Node struct {
-	ready chan struct{}
+	ready, stopped chan struct{}
 
 	cfg            spork.Config
 	cfgFile        string
 	cmd            *exec.Cmd
-	stdout         *logElectionWatcher
+	logger         *logActivityWatcher
 	binaryLocation string
 }
 
@@ -38,7 +40,7 @@ func NewNode(binaryLocation string, cfg spork.Config, out io.Writer) (*Node, err
 
 	return &Node{
 		cfgFile:        cfgFile.Name(),
-		stdout:         newLogElectionWatcher(out),
+		logger:         newLogElectionWatcher(out),
 		binaryLocation: binaryLocation,
 		cfg:            cfg,
 	}, nil
@@ -53,32 +55,61 @@ func (n *Node) Destroy() error {
 }
 
 func (n *Node) Start() error {
-	n.setupCmd()
-	go n.watchReady()
+	n.setup()
+	go n.watchActivity()
 	return n.cmd.Start()
 }
 
-func (n *Node) setupCmd() {
+func (n *Node) setup() {
 	cmd := exec.Command(n.binaryLocation, n.cfgFile)
-	cmd.Stdout = n.stdout
-	cmd.Stderr = n.stdout
+	cmd.Stdout = n.logger
+	cmd.Stderr = n.logger
 	n.cmd = cmd
 	n.ready = make(chan struct{})
+	n.stopped = make(chan struct{})
 }
 
-func (n *Node) watchReady() {
-	select {
-	case <-n.ready: // someone closes ready on a Stop of the node
-	case <-n.stdout.elections:
-		close(n.ready)
+func (n *Node) watchActivity() {
+	t := time.NewTimer(activityTimeout)
+
+	for {
+		select {
+		case <-n.stopped:
+			return
+
+		case <-n.logger.logActivity:
+			select {
+			case <-n.ready: // if we were ready, we aren't anymore
+				n.ready = make(chan struct{})
+			default: // if we weren't ready, keep being not ready
+			}
+
+			// drain and reset the timer
+			if !t.Stop() {
+				select {
+				case <-t.C:
+				default:
+				}
+			}
+			t.Reset(activityTimeout)
+
+		case <-t.C:
+			select {
+			case <-n.ready: // already closed
+			default:
+				close(n.ready)
+			}
+			t.Reset(activityTimeout)
+		}
 	}
 }
 
-// Stop send a stop signal to spork and waits for it to terminate.
+// Stop sends a stop signal to spork and waits for it to terminate.
 func (n *Node) Stop() error {
-	if n.cmd == nil {
+	if n.Stopped() {
 		return nil
 	}
+	defer close(n.stopped)
 
 	err := n.cmd.Process.Signal(syscall.SIGINT)
 	if err != nil {
@@ -86,14 +117,6 @@ func (n *Node) Stop() error {
 	}
 
 	err = n.cmd.Wait()
-
-	select {
-	case <-n.ready: // already closed
-	default:
-		close(n.ready)
-	}
-
-	n.cmd = nil
 	if _, ok := err.(*exec.ExitError); ok {
 		// stopping was successful, but spork errored, but we don't care
 		return nil
@@ -101,22 +124,44 @@ func (n *Node) Stop() error {
 	return err
 }
 
-func (n *Node) WaitReady() {
-	<-n.ready
+func (n *Node) Stopped() bool {
+	select {
+	case <-n.stopped:
+		return true
+	default:
+		return false
+	}
 }
 
-func (n *Node) FileContains(fileName string, contents []byte) bool {
+// Ready returns a channel that will be closed iff the node hasn't had any log activity in the last two seconds (= activityTimeout)
+func (n *Node) Ready() <-chan struct{} {
+	return n.ready
+}
+
+func (n *Node) FileDiff(fileName string, contents []byte) Diff {
 	actualContents, err := ioutil.ReadFile(n.filePath(fileName))
-	return err == nil && bytes.Equal(actualContents, contents)
+	if err != nil {
+		actualContents = []byte(err.Error())
+	}
+
+	return fileContentsDiff{
+		expectedContents: string(contents),
+		actualContents:   string(actualContents),
+	}
 }
 
 func (n *Node) filePath(fileName string) string {
 	return n.cfg.MountPoint + "/" + fileName
 }
 
-func (n *Node) FileExists(fileName string) bool {
+func (n *Node) FileExists(fileName string) Diff {
 	_, err := os.Stat(n.filePath(fileName))
-	return err == nil
+	return fileShouldExistDiff(fileName, err == nil)
+}
+
+func (n *Node) FileDoesntExist(fileName string) Diff {
+	_, err := os.Stat(n.filePath(fileName))
+	return fileShouldntExistDiff(fileName, err == nil)
 }
 
 func (n *Node) OpenFile(fileName string) (*os.File, error) {
@@ -124,7 +169,7 @@ func (n *Node) OpenFile(fileName string) (*os.File, error) {
 }
 
 func (n *Node) CreateFile(fileName string) (*os.File, error) {
-	return os.Create(n.filePath(fileName))
+	return os.OpenFile(n.filePath(fileName), os.O_APPEND|os.O_RDWR|os.O_CREATE, 0666)
 }
 
 func (n *Node) DeleteFile(fileName string) error {

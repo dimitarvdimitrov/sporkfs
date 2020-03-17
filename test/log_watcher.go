@@ -1,31 +1,26 @@
 package test
 
 import (
-	"bytes"
 	"io"
 )
 
-var electedLeaderBytes = []byte("elected leader")
-
-type logElectionWatcher struct {
+type logActivityWatcher struct {
 	dest io.Writer
 
-	elections chan struct{}
+	logActivity chan struct{}
 }
 
-func newLogElectionWatcher(dest io.Writer) *logElectionWatcher {
-	return &logElectionWatcher{
-		dest:      dest,
-		elections: make(chan struct{}),
+func newLogElectionWatcher(dest io.Writer) *logActivityWatcher {
+	return &logActivityWatcher{
+		dest:        dest,
+		logActivity: make(chan struct{}),
 	}
 }
 
-func (w *logElectionWatcher) Write(b []byte) (int, error) {
-	if bytes.Contains(b, electedLeaderBytes) {
-		select {
-		case w.elections <- struct{}{}:
-		default:
-		}
+func (w *logActivityWatcher) Write(b []byte) (int, error) {
+	select {
+	case w.logActivity <- struct{}{}:
+	default:
 	}
 	return w.dest.Write(b)
 }
