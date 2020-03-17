@@ -111,8 +111,8 @@ func startFuseServer(ctx context.Context, cancel context.CancelFunc, mountpoint 
 		cancel()
 	}()
 
-	go vfs.WatchInvalidations(ctx, fuseServer)
-	go vfs.WatchDeletions(ctx)
+	go vfs.WatchInvalidations(fuseServer)
+	go vfs.WatchDeletions()
 }
 
 func parseConfig(dir string) (cfg spork.Config) {

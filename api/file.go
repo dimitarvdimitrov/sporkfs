@@ -26,7 +26,8 @@ func NewFileServer(s, c data.Driver) *fileServer {
 }
 
 func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadServer) error {
-	log.Debug("received read grpc request", log.Id(req.Id), log.Ver(req.Version))
+	log.Debug("[file_api] received read grpc request", log.Id(req.Id), log.Ver(req.Version))
+	defer log.Debug("[file_api] returned read grpc request", log.Id(req.Id), log.Ver(req.Version))
 
 	var src data.Driver
 	if server.cache.Contains(req.Id, req.Version) {

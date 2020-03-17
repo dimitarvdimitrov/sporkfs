@@ -201,10 +201,11 @@ func (s Spork) ensureFile(f *store.File) (storedata.Driver, error) {
 
 func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver) error {
 	if dst.Contains(id, version) {
-		log.Debug("file already present in destination", log.Id(id), log.Ver(version))
+		log.Debug("[spork] file already present in destination", log.Id(id), log.Ver(version))
 		return nil
 	}
-	log.Debug("transferring remote file", log.Id(id), log.Ver(version))
+	log.Debug("[spork] transferring remote file", log.Id(id), log.Ver(version))
+	defer log.Debug("[spork] transferred remote file", log.Id(id), log.Ver(version))
 
 	r, err := s.fetcher.Reader(id, version)
 	if err != nil {

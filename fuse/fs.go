@@ -1,7 +1,6 @@
 package fuse
 
 import (
-	"context"
 	"sync"
 	"syscall"
 
@@ -42,27 +41,19 @@ func (f Fs) Destroy() {
 	log.Info("stopped vfs")
 }
 
-func (f Fs) WatchInvalidations(ctx context.Context, server *fs.Server) {
-	for {
-		select {
-		case file, ok := <-f.invalidFiles:
-			if !ok {
-				return
+func (f Fs) WatchInvalidations(server *fs.Server) {
+	for file := range f.invalidFiles {
+		var pid, ppid uint64
+		var pname string
+		if parent := file.Parent; parent != nil {
+			pid = parent.Id
+			pname = parent.Name
+			if pparent := parent.Parent; pparent != nil {
+				ppid = pparent.Id
 			}
-			var pid, ppid uint64
-			var pname string
-			if parent := file.Parent; parent != nil {
-				pid = parent.Id
-				pname = parent.Name
-				if pparent := parent.Parent; pparent != nil {
-					ppid = pparent.Id
-				}
-			}
-			// in a goroutine because https://github.com/bazil/fuse/issues/220
-			go invalidateFile(file.Id, pid, ppid, file.Name, pname, f.reg, server)
-		case <-ctx.Done():
-			return
 		}
+		// in a goroutine because of https://github.com/bazil/fuse/issues/220
+		go invalidateFile(file.Id, pid, ppid, file.Name, pname, f.reg, server)
 	}
 }
 
@@ -87,20 +78,11 @@ func invalidateFile(fid, pid, ppid uint64, name, pname string, reg nodeRegistrar
 	log.Debug("[vfs] invalidated file and its parent entry", log.Id(fid), log.Name(name))
 }
 
-func (f Fs) WatchDeletions(ctx context.Context) {
-	for {
-		select {
-		case file, ok := <-f.deletedFiles:
-			if !ok {
-				return
-			}
-
-			f.reg.deleteNode(node{File: file})
-			f.invalidFiles <- file
-			log.Debug("[vfs] invalidated deleted file", log.Id(file.Id))
-		case <-ctx.Done():
-			return
-		}
+func (f Fs) WatchDeletions() {
+	for file := range f.deletedFiles {
+		f.reg.deleteNode(node{File: file})
+		f.invalidFiles <- file
+		log.Debug("[vfs] invalidated deleted file", log.Id(file.Id))
 	}
 }
 

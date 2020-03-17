@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	bcastTime       = time.Millisecond * 20 // usual time it takes to send a message and receive a reply
+	bcastTime       = time.Millisecond * 10 // usual time it takes to send a message and receive a reply
 	heartbeatPeriod = bcastTime * 5
 	electionTimeout = heartbeatPeriod * 10
 )

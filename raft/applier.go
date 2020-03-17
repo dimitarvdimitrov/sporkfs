@@ -8,6 +8,7 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
+	"go.uber.org/zap"
 )
 
 // applier terminates when the commits channel has been closed. Applier accepts proposals and keeps track of them.
@@ -51,9 +52,9 @@ func (w *applier) watchCommits() {
 		w.l.Lock()
 		resultC, ok := w.inFlight[entry.Id]
 		if ok {
-			log.Debug("queuing confirmation of previously proposed raft entry")
 			select {
 			case resultC <- entry.Action:
+				log.Debug("[applier] queuing confirmation of previously proposed raft entry", zap.Uint64("entry_rand_id", entry.Id))
 				close(resultC)
 				w.l.Unlock()
 				continue
@@ -61,7 +62,7 @@ func (w *applier) watchCommits() {
 			}
 		}
 		w.l.Unlock()
-		log.Debug("queuing enforcement of raft entry")
+		log.Debug("[applier] queuing enforcement of raft entry", zap.Uint64("entry_rand_id", entry.Id))
 		w.syncC <- entry
 	}
 }
@@ -153,6 +154,7 @@ func (w *applier) propose(entry *raftpb.Entry) (bool, func()) {
 	case <-timeout:
 		return false, noop
 	case w.proposeC <- entry:
+		log.Debug("[applier] proposed entry", zap.Uint64("entry_rand_id", entry.Id))
 	}
 
 	select {
