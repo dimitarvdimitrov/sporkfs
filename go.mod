@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/coreos/etcd v3.3.18+incompatible
 	github.com/gogo/protobuf v1.3.1 // indirect
-	github.com/golang/protobuf v1.3.2
+	github.com/golang/protobuf v1.5.2
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/seaweedfs/fuse v0.0.0-20190510212405-310228904eff
 	github.com/stretchr/testify v1.4.0
