@@ -3,18 +3,18 @@ package spork
 import (
 	"time"
 
+	"github.com/dimitarvdimitrov/sporkfs/api/sporkraft"
 	"github.com/dimitarvdimitrov/sporkfs/log"
-	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
 	"go.uber.org/zap"
 )
 
-func (s Spork) watchRaft() {
+func (s *Spork) watchRaft() {
 	defer s.wg.Done()
 	for entry := range s.commitC {
 		switch msg := entry.Message.(type) {
-		case *raftpb.Entry_Add:
+		case *sporkraft.Entry_Add:
 			req := msg.Add
 			log.Debug("[spork] processing add raft entry", log.Id(req.Id), log.Name(req.Name))
 			parent, err := s.inventory.GetAny(req.ParentId)
@@ -54,7 +54,7 @@ func (s Spork) watchRaft() {
 
 			parent.Unlock()
 			file.Unlock()
-		case *raftpb.Entry_Rename:
+		case *sporkraft.Entry_Rename:
 			req := msg.Rename
 			log.Debug("[spork] processing rename raft entry", log.Id(req.Id), zap.String("new_name", req.NewName))
 
@@ -86,7 +86,7 @@ func (s Spork) watchRaft() {
 			if oldParent.Id != newParent.Id {
 				newParent.Unlock()
 			}
-		case *raftpb.Entry_Delete:
+		case *sporkraft.Entry_Delete:
 			req := msg.Delete
 			log.Debug("[spork] processing delete raft entry", log.Id(req.Id))
 
@@ -101,7 +101,7 @@ func (s Spork) watchRaft() {
 			s.deleted <- file
 			file.Unlock()
 			file.Parent.Unlock()
-		case *raftpb.Entry_Change:
+		case *sporkraft.Entry_Change:
 			req := msg.Change
 			log.Debug("[spork] processing change raft entry", log.Id(req.Id), log.Ver(req.Version), zap.Uint64("from", req.PeerId))
 

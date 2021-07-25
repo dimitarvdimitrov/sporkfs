@@ -10,7 +10,7 @@ type logActivityWatcher struct {
 	logActivity chan struct{}
 }
 
-func newLogElectionWatcher(dest io.Writer) *logActivityWatcher {
+func newLogActivityWatcher(dest io.Writer) *logActivityWatcher {
 	return &logActivityWatcher{
 		dest:        dest,
 		logActivity: make(chan struct{}),

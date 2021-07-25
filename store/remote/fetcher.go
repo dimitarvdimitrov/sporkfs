@@ -6,8 +6,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/dimitarvdimitrov/sporkfs/api"
-	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
+	api "github.com/dimitarvdimitrov/sporkfs/api/file"
+	proto "github.com/dimitarvdimitrov/sporkfs/api/file"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"

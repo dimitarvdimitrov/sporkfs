@@ -10,11 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dimitarvdimitrov/sporkfs/api"
-	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
+	api "github.com/dimitarvdimitrov/sporkfs/api/file"
+	apiraft "github.com/dimitarvdimitrov/sporkfs/api/sporkraft"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/raft"
-	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	storedata "github.com/dimitarvdimitrov/sporkfs/store/data"
 	"github.com/dimitarvdimitrov/sporkfs/store/data/cache"
@@ -26,7 +25,7 @@ import (
 )
 
 type Spork struct {
-	inventory        inventory.Driver
+	inventory        *inventory.Driver
 	data             storedata.Driver
 	cache            cache.Cache
 	invalid, deleted chan<- *store.File
@@ -80,7 +79,7 @@ func New(ctx context.Context, cancel context.CancelFunc, cfg Config, invalid, de
 	return s, nil
 }
 
-func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data, cache storedata.Driver, raft *raft.Raft, wg *sync.WaitGroup) {
+func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr string, data, cache storedata.Driver, raftServer apiraft.RaftServer, wg *sync.WaitGroup) {
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatal("failed to listen", zap.Error(err))
@@ -88,8 +87,8 @@ func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr 
 	grpcServer := grpc.NewServer()
 
 	reflection.Register(grpcServer)
-	proto.RegisterFileServer(grpcServer, api.NewFileServer(data, cache))
-	raftpb.RegisterRaftServer(grpcServer, raft)
+	api.RegisterFileServer(grpcServer, api.NewFileServer(data, cache))
+	apiraft.RegisterRaftServer(grpcServer, raftServer)
 
 	wg.Add(1)
 	go func() {
@@ -109,11 +108,11 @@ func startGrpcServer(ctx context.Context, cancel context.CancelFunc, listenAddr 
 	}()
 }
 
-func (s Spork) Root() *store.File {
+func (s *Spork) Root() *store.File {
 	return s.inventory.Root()
 }
 
-func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
+func (s *Spork) Lookup(f *store.File, name string) (*store.File, error) {
 	f.RLock()
 	defer f.RUnlock()
 
@@ -125,7 +124,7 @@ func (s Spork) Lookup(f *store.File, name string) (*store.File, error) {
 	return nil, store.ErrNoSuchFile
 }
 
-func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
+func (s *Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 	f.Lock()
 	defer f.Unlock()
 	log.Debug("opening file for read/write", log.Id(f.Id), log.Ver(f.Version))
@@ -163,7 +162,7 @@ func (s Spork) ReadWriter(f *store.File, flags int) (ReadWriteCloser, error) {
 	return rw, nil
 }
 
-func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
+func (s *Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 	f.RLock()
 	defer f.RUnlock()
 
@@ -185,7 +184,7 @@ func (s Spork) Read(f *store.File, flags int) (ReadCloser, error) {
 }
 
 // ensureFile makes sure the file is present locally and returns the driver from which the file can be read
-func (s Spork) ensureFile(f *store.File) (storedata.Driver, error) {
+func (s *Spork) ensureFile(f *store.File) (storedata.Driver, error) {
 	driver := s.data
 	if !s.peers.IsLocalFile(f.Id) {
 		driver = s.cache
@@ -199,7 +198,7 @@ func (s Spork) ensureFile(f *store.File) (storedata.Driver, error) {
 	return driver, nil
 }
 
-func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver) error {
+func (s *Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver) error {
 	if dst.Contains(id, version) {
 		log.Debug("[spork] file already present in destination", log.Id(id), log.Ver(version))
 		return nil
@@ -227,7 +226,7 @@ func (s Spork) maybeTransferRemoteFile(id, version uint64, dst storedata.Driver)
 	return nil
 }
 
-func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint string, dst storedata.Driver) error {
+func (s *Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint string, dst storedata.Driver) error {
 	log.Debug("transferring remote file", log.Id(id), log.Ver(newVersion), zap.Uint64("old_version", oldVersion))
 	if dst.Contains(id, newVersion) {
 		log.Debug("[spork] skipping transfer since file is already here",
@@ -260,11 +259,11 @@ func (s Spork) updateLocalFile(id, oldVersion, newVersion uint64, peerHint strin
 	return nil
 }
 
-func (s Spork) Write(f *store.File, flags int) (WriteCloser, error) {
+func (s *Spork) Write(f *store.File, flags int) (WriteCloser, error) {
 	return s.ReadWriter(f, flags)
 }
 
-func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) (*store.File, error) {
+func (s *Spork) CreateFile(parent *store.File, name string, mode store.FileMode) (*store.File, error) {
 	parent.Lock()
 	defer parent.Unlock()
 
@@ -289,7 +288,7 @@ func (s Spork) CreateFile(parent *store.File, name string, mode store.FileMode) 
 	return f, nil
 }
 
-func (s Spork) CreateLink(file, parent *store.File, linkName string) (*store.File, error) {
+func (s *Spork) CreateLink(file, parent *store.File, linkName string) (*store.File, error) {
 	parent.Lock()
 	defer parent.Unlock()
 	file.Lock()
@@ -323,14 +322,14 @@ func (s Spork) CreateLink(file, parent *store.File, linkName string) (*store.Fil
 }
 
 // add will set the Parent field of the file, add it to the inventory, and to the children of the parent
-func (s Spork) add(file *store.File, parent *store.File) {
+func (s *Spork) add(file *store.File, parent *store.File) {
 	file.Parent = parent
 	s.inventory.Add(file)
 	parent.Children = append(parent.Children, file)
 	parent.Size = int64(len(parent.Children))
 }
 
-func (s Spork) newFile(name string, mode store.FileMode) *store.File {
+func (s *Spork) newFile(name string, mode store.FileMode) *store.File {
 	now := time.Now()
 	return &store.File{
 		RWMutex:  &sync.RWMutex{},
@@ -345,7 +344,7 @@ func (s Spork) newFile(name string, mode store.FileMode) *store.File {
 	}
 }
 
-func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) error {
+func (s *Spork) Rename(file, oldParent, newParent *store.File, newName string) error {
 	oldParent.Lock()
 	defer oldParent.Unlock()
 
@@ -372,7 +371,7 @@ func (s Spork) Rename(file, oldParent, newParent *store.File, newName string) er
 	return nil
 }
 
-func (s Spork) rename(file *store.File, newParent *store.File, oldParent *store.File, newName string) {
+func (s *Spork) rename(file *store.File, newParent *store.File, oldParent *store.File, newName string) {
 	file.Name = newName
 
 	if oldParent.Id != newParent.Id {
@@ -390,7 +389,7 @@ func (s Spork) rename(file *store.File, newParent *store.File, oldParent *store.
 	}
 }
 
-func (s Spork) Delete(file *store.File) error {
+func (s *Spork) Delete(file *store.File) error {
 	if len(file.Children) != 0 {
 		return store.ErrDirectoryNotEmpty
 	}
@@ -425,14 +424,14 @@ func (s Spork) Delete(file *store.File) error {
 	return nil
 }
 
-func (s Spork) delete(file *store.File) {
+func (s *Spork) delete(file *store.File) {
 	if !s.inventory.Remove(file) {
 		s.data.Remove(file.Id, file.Version)
 		s.cache.Remove(file.Id, file.Version)
 	}
 }
 
-func (s Spork) Close() {
+func (s *Spork) Close() {
 	log.Info("stopping spork...")
 	s.raft.Shutdown()
 	s.wg.Wait()

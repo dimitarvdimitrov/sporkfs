@@ -10,8 +10,8 @@ import (
 
 	"github.com/coreos/etcd/raft"
 	etcdraftpb "github.com/coreos/etcd/raft/raftpb"
+	apiraft "github.com/dimitarvdimitrov/sporkfs/api/sporkraft"
 	"github.com/dimitarvdimitrov/sporkfs/log"
-	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/raft/storage"
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
@@ -29,19 +29,19 @@ type node struct {
 	storage     storage.Storage
 	snapshotter *snapshotter
 
-	clients map[string]raftpb.RaftClient
+	clients map[string]apiraft.RaftClient
 	peers   *Peers
 
 	t            *time.Ticker
 	commitC      chan<- UnactionedMessage
-	proposeC     <-chan *raftpb.Entry
+	proposeC     <-chan *apiraft.Entry
 	entryTracker *entryTracker
 
 	done chan struct{}
 	wg   *sync.WaitGroup
 }
 
-func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*node, <-chan UnactionedMessage, chan<- *raftpb.Entry) {
+func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*node, <-chan UnactionedMessage, chan<- *apiraft.Entry) {
 	s := storage.New(storeLocation, peers.confState())
 
 	config := &raft.Config{
@@ -55,10 +55,10 @@ func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*
 		Logger:          log.Logger(),
 	}
 
-	clients := make(map[string]raftpb.RaftClient, peers.Len())
+	clients := make(map[string]apiraft.RaftClient, peers.Len())
 	err := peers.ForEach(func(peerAddr string) error {
 		cc, err := grpc.Dial(peerAddr, grpc.WithInsecure())
-		clients[peerAddr] = raftpb.NewRaftClient(cc)
+		clients[peerAddr] = apiraft.NewRaftClient(cc)
 		return err
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func newNode(peers *Peers, storeLocation string, stateSources ...StateSource) (*
 	raftNode := raft.RestartNode(config)
 
 	commitC := make(chan UnactionedMessage)
-	proposeC := make(chan *raftpb.Entry)
+	proposeC := make(chan *apiraft.Entry)
 
 	node := &node{
 		raft:         raftNode,
@@ -259,7 +259,7 @@ func (s *node) process(e etcdraftpb.Entry) {
 		s.raft.ApplyConfChange(cc)
 
 	case etcdraftpb.EntryNormal:
-		msg := &raftpb.Entry{}
+		msg := &apiraft.Entry{}
 		if err := proto.Unmarshal(e.Data, msg); err != nil {
 			log.Error("couldn't decode entry", zap.ByteString("entry", e.Data))
 			break

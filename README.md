@@ -70,7 +70,7 @@ this_peer = "localhost:70"
 
 ## Development
 
-Testing is straight forward `go test ./...`.
+Run all tests with `make test`.
 
 If you will be changing the protobufs, you need [protoc](https://github.com/protocolbuffers/protobuf/releases) 
 and [the pb go plugin](https://github.com/golang/protobuf). Run `make protos` to compile the `.pb` files (new files may not be compiled).

@@ -40,7 +40,7 @@ func NewNode(binaryLocation string, cfg spork.Config, out io.Writer) (*Node, err
 
 	return &Node{
 		cfgFile:        cfgFile.Name(),
-		logger:         newLogElectionWatcher(out),
+		logger:         newLogActivityWatcher(out),
 		binaryLocation: binaryLocation,
 		cfg:            cfg,
 	}, nil
@@ -133,7 +133,7 @@ func (n *Node) Stopped() bool {
 	}
 }
 
-// Ready returns a channel that will be closed iff the node hasn't had any log activity in the last two seconds (= activityTimeout)
+// Ready returns a channel that will be closed iff the node hasn't had any log activity in the configured activityTimeout
 func (n *Node) Ready() <-chan struct{} {
 	return n.ready
 }

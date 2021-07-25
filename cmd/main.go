@@ -74,6 +74,7 @@ func unmountWhenDone(ctx context.Context, mountpoint string, wg *sync.WaitGroup)
 	go func() {
 		<-ctx.Done()
 		for done := false; !done; time.Sleep(time.Second) {
+			// TODO make this work on osx too
 			if err := exec.Command("fusermount", "-zu", mountpoint).Run(); err != nil {
 				log.Error("unmount", zap.Error(err))
 			} else {

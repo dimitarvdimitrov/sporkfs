@@ -4,8 +4,8 @@ import (
 	"context"
 
 	etcdraftpb "github.com/coreos/etcd/raft/raftpb"
+	"github.com/dimitarvdimitrov/sporkfs/api/sporkraft"
 	"github.com/dimitarvdimitrov/sporkfs/log"
-	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
@@ -53,8 +53,8 @@ func (r *Raft) Delete(id, parentId uint64, name string) (bool, func()) {
 	return r.a.ProposeDelete(id, parentId, name)
 }
 
-func (r *Raft) Step(ctx context.Context, e *etcdraftpb.Message) (*raftpb.Empty, error) {
-	return &raftpb.Empty{}, r.n.raft.Step(ctx, *e)
+func (r *Raft) Step(ctx context.Context, e *etcdraftpb.Message) (*sporkraft.Empty, error) {
+	return &sporkraft.Empty{}, r.n.raft.Step(ctx, *e)
 }
 
 func (r *Raft) Shutdown() {

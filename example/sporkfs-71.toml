@@ -1,5 +1,5 @@
-mount_point = "/mnt/sporkfs-71"
-data_dir = "/opt/spork/storage-71"
+mount_point = "/Users/dimitar.dimitrov/spork/mnt/sporkfs-71"
+data_dir = "/Users/dimitar.dimitrov/spork/data/storage-71"
 redundancy = 2
-all_peers = ["localhost:71", "localhost:70"]
-this_peer = "localhost:71"
+all_peers = ["localhost:1771", "localhost:1770"]
+this_peer = "localhost:1771"

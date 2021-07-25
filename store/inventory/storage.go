@@ -8,11 +8,11 @@ import (
 	"github.com/dimitarvdimitrov/sporkfs/store"
 )
 
-func (d Driver) Name() string {
+func (d *Driver) Name() string {
 	return "inventory"
 }
 
-func (d Driver) GetState() (io.Reader, error) {
+func (d *Driver) GetState() (io.Reader, error) {
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -24,7 +24,7 @@ func (d Driver) GetState() (io.Reader, error) {
 	return buff, nil
 }
 
-func (d Driver) SetState(r io.Reader) error {
+func (d *Driver) SetState(r io.Reader) error {
 	d.m.Lock()
 	defer d.m.Unlock()
 

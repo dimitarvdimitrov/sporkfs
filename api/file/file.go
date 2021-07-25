@@ -1,10 +1,9 @@
-package api
+package file
 
 import (
 	"io"
 	"os"
 
-	proto "github.com/dimitarvdimitrov/sporkfs/api/pb"
 	"github.com/dimitarvdimitrov/sporkfs/log"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"github.com/dimitarvdimitrov/sporkfs/store/data"
@@ -25,7 +24,7 @@ func NewFileServer(s, c data.Driver) *fileServer {
 	}
 }
 
-func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadServer) error {
+func (server *fileServer) Read(req *ReadRequest, stream File_ReadServer) error {
 	log.Debug("[file_api] received read grpc request", log.Id(req.Id), log.Ver(req.Version))
 	defer log.Debug("[file_api] returned read grpc request", log.Id(req.Id), log.Ver(req.Version))
 
@@ -45,7 +44,7 @@ func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadSer
 	}
 
 	// send an empty reply to confirm we have the file
-	if err = stream.Send(&proto.ReadReply{}); err != nil {
+	if err = stream.Send(&ReadReply{}); err != nil {
 		return err
 	}
 
@@ -61,7 +60,7 @@ func (server *fileServer) Read(req *proto.ReadRequest, stream proto.File_ReadSer
 			break
 		}
 
-		msg := &proto.ReadReply{
+		msg := &ReadReply{
 			Content: buff[:n],
 		}
 		if err = stream.Send(msg); err != nil {

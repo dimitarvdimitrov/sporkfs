@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dimitarvdimitrov/sporkfs/api/sporkraft"
 	"github.com/dimitarvdimitrov/sporkfs/log"
-	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
 	"github.com/dimitarvdimitrov/sporkfs/store"
 	"go.uber.org/zap"
 )
@@ -14,7 +14,7 @@ import (
 // applier terminates when the commits channel has been closed. Applier accepts proposals and keeps track of them.
 // See implementation of
 type applier struct {
-	proposeC chan<- *raftpb.Entry
+	proposeC chan<- *sporkraft.Entry
 	commitC  <-chan UnactionedMessage
 	syncC    chan<- UnactionedMessage
 
@@ -24,7 +24,7 @@ type applier struct {
 	done     chan struct{}
 }
 
-func newApplier(commits <-chan UnactionedMessage, proposals chan<- *raftpb.Entry) (*applier, <-chan UnactionedMessage) {
+func newApplier(commits <-chan UnactionedMessage, proposals chan<- *sporkraft.Entry) (*applier, <-chan UnactionedMessage) {
 	syncC := make(chan UnactionedMessage)
 	w := &applier{
 		proposeC: proposals,
@@ -68,61 +68,61 @@ func (w *applier) watchCommits() {
 }
 
 func (w *applier) ProposeChange(id, version, offset, peer uint64, size int64) (bool, func()) {
-	c := &raftpb.Change{
+	c := &sporkraft.Change{
 		Id:      id,
 		Version: version,
 		Offset:  offset,
 		Size:    size,
 		PeerId:  peer,
 	}
-	entry := &raftpb.Entry{
-		Message: &raftpb.Entry_Change{Change: c},
+	entry := &sporkraft.Entry{
+		Message: &sporkraft.Entry_Change{Change: c},
 	}
 
 	return w.propose(entry)
 }
 
 func (w *applier) ProposeAdd(id, parentId uint64, name string, mode store.FileMode) (bool, func()) {
-	a := &raftpb.Add{
+	a := &sporkraft.Add{
 		Id:       id,
 		ParentId: parentId,
 		Name:     name,
 		Mode:     uint32(mode),
 	}
-	entry := &raftpb.Entry{
-		Message: &raftpb.Entry_Add{Add: a},
+	entry := &sporkraft.Entry{
+		Message: &sporkraft.Entry_Add{Add: a},
 	}
 
 	return w.propose(entry)
 }
 
 func (w *applier) ProposeRename(id, oldParentId, newParentId uint64, oldName, newName string) (bool, func()) {
-	r := &raftpb.Rename{
+	r := &sporkraft.Rename{
 		Id:          id,
 		OldParentId: oldParentId,
 		NewParentId: newParentId,
 		NewName:     newName,
 		OldName:     oldName,
 	}
-	entry := &raftpb.Entry{
-		Message: &raftpb.Entry_Rename{Rename: r},
+	entry := &sporkraft.Entry{
+		Message: &sporkraft.Entry_Rename{Rename: r},
 	}
 	return w.propose(entry)
 }
 
 func (w *applier) ProposeDelete(id, parentId uint64, name string) (bool, func()) {
-	d := &raftpb.Delete{
+	d := &sporkraft.Delete{
 		Id:       id,
 		ParentId: parentId,
 		Name:     name,
 	}
-	entry := &raftpb.Entry{
-		Message: &raftpb.Entry_Delete{Delete: d},
+	entry := &sporkraft.Entry{
+		Message: &sporkraft.Entry_Delete{Delete: d},
 	}
 	return w.propose(entry)
 }
 
-func (w *applier) propose(entry *raftpb.Entry) (bool, func()) {
+func (w *applier) propose(entry *sporkraft.Entry) (bool, func()) {
 	select {
 	case <-w.done:
 		return false, noop

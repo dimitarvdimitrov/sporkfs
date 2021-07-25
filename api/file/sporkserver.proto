@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package file;
+option go_package = "../file";
+
+service File {
+  rpc Read(ReadRequest) returns (stream ReadReply) {}
+}
+
+message ReadRequest {
+  uint64 id = 1;
+  uint64 version = 2;
+}
+
+message ReadReply {
+  bytes content = 1;
+}

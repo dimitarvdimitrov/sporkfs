@@ -3,11 +3,11 @@ package raft
 import (
 	"sync"
 
-	raftpb "github.com/dimitarvdimitrov/sporkfs/raft/pb"
+	"github.com/dimitarvdimitrov/sporkfs/api/sporkraft"
 )
 
 type UnactionedMessage struct {
-	*raftpb.Entry
+	*sporkraft.Entry
 
 	Action func()
 }

@@ -15,7 +15,7 @@ type Driver struct {
 	catalog map[uint64][]*store.File
 }
 
-func NewDriver() (Driver, error) {
+func NewDriver() (*Driver, error) {
 	rand.Seed(time.Now().UnixNano())
 
 	now := time.Now()
@@ -32,7 +32,7 @@ func NewDriver() (Driver, error) {
 	c := make(map[uint64][]*store.File)
 	catalogFiles(root, c)
 
-	return Driver{
+	return &Driver{
 		root:    root,
 		catalog: c,
 	}, nil
@@ -45,11 +45,11 @@ func catalogFiles(root *store.File, catalog map[uint64][]*store.File) {
 	}
 }
 
-func (d Driver) Root() *store.File {
+func (d *Driver) Root() *store.File {
 	return d.root
 }
 
-func (d Driver) GetAny(id uint64) (*store.File, error) {
+func (d *Driver) GetAny(id uint64) (*store.File, error) {
 	d.m.RLock()
 	defer d.m.RUnlock()
 
@@ -60,14 +60,14 @@ func (d Driver) GetAny(id uint64) (*store.File, error) {
 	return links[0], nil
 }
 
-func (d Driver) GetAll(id uint64) []*store.File {
+func (d *Driver) GetAll(id uint64) []*store.File {
 	d.m.RLock()
 	defer d.m.RUnlock()
 
 	return d.catalog[id]
 }
 
-func (d Driver) GetSpecific(id, parent uint64, name string) (*store.File, error) {
+func (d *Driver) GetSpecific(id, parent uint64, name string) (*store.File, error) {
 	d.m.RLock()
 	defer d.m.RUnlock()
 
@@ -80,7 +80,7 @@ func (d Driver) GetSpecific(id, parent uint64, name string) (*store.File, error)
 }
 
 // SetVersion sets the version for all known links
-func (d Driver) SetVersion(id, version uint64) {
+func (d *Driver) SetVersion(id, version uint64) {
 	d.m.RLock()
 	defer d.m.RUnlock()
 
@@ -89,8 +89,8 @@ func (d Driver) SetVersion(id, version uint64) {
 	}
 }
 
-// SetVersion sets the version for all known links
-func (d Driver) SetSize(id uint64, size int64) {
+// SetSize sets the size for all known links
+func (d *Driver) SetSize(id uint64, size int64) {
 	d.m.RLock()
 	defer d.m.RUnlock()
 
@@ -99,7 +99,7 @@ func (d Driver) SetSize(id uint64, size int64) {
 	}
 }
 
-func (d Driver) Add(f *store.File) {
+func (d *Driver) Add(f *store.File) {
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -107,7 +107,7 @@ func (d Driver) Add(f *store.File) {
 }
 
 // Remove deletes the from the inventory and returns true if there are any more hard links to it
-func (d Driver) Remove(f *store.File) bool {
+func (d *Driver) Remove(f *store.File) bool {
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -137,7 +137,7 @@ func (d Driver) Remove(f *store.File) bool {
 }
 
 // NewId returns a new ID. It guarantees that at the time of creation this ID is unique among all files.
-func (d Driver) NewId() (id uint64) {
+func (d *Driver) NewId() (id uint64) {
 	d.m.RLock()
 	defer d.m.RUnlock()
 

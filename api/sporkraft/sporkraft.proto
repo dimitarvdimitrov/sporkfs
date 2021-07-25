@@ -1,5 +1,7 @@
 syntax = "proto3";
-option go_package = "raftpb";
+
+package sporkraft;
+option go_package = "../sporkraft";
 
 import "etcd/raftpb/raft.proto";
 
