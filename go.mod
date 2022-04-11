@@ -3,7 +3,7 @@ module github.com/dimitarvdimitrov/sporkfs
 go 1.13
 
 require (
-	github.com/BurntSushi/toml v0.3.1
+	github.com/BurntSushi/toml v1.1.0
 	github.com/coreos/etcd v3.3.18+incompatible
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.3.2
